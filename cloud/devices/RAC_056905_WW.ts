@@ -278,8 +278,8 @@ export default class Device extends TLVDevice {
                     action_topic: '$this/climate-action',
                     temperature_unit: 'C',
                     /* TODO: detect 0.5 C vs 1 C step */
-                    temp_step: isPac910604 ? 1 : 0.5,
-                    precision: isPac910604 ? 1 : 0.5,
+                    temp_step: 0.5,
+                    precision: 0.5,
                     /* TODO: some devices report these temp ranges via tags 0x2e1 - 0x2ec */
                     min_temp: 18,
                     max_temp: 30,
