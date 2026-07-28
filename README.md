@@ -403,6 +403,13 @@ ASUS 순정 펌웨어에서는 공유기 재부팅이나 방화벽 재시작 후
 
 기존 규칙이 남아 있는데 DNAT 명령을 다시 실행하면 중복 규칙이 생깁니다. 반드시 현재 규칙을 먼저 확인하세요.
 
+재부팅 후에도 규칙을 자동으로 유지하려면 공유기가 지원하는 경우 **Asuswrt-Merlin** 또는 **OpenWrt** 같은 커스텀 펌웨어를 사용할 수 있습니다.
+
+- Asuswrt-Merlin은 JFFS의 `/jffs/scripts/nat-start`처럼 NAT 구성이 완료된 뒤 실행되는 사용자 스크립트를 지원하므로, 여기에 중복 확인을 포함한 DNAT 명령을 등록할 수 있습니다. 자세한 내용은 [Asuswrt-Merlin User scripts](https://github.com/RMerl/asuswrt-merlin/wiki/User-scripts)를 참고하세요.
+- OpenWrt는 방화벽 설정 파일에 DNAT 규칙을 영구 등록할 수 있습니다. OpenWrt 22.03 이후의 `fw4`는 nftables 기반이므로 이 문서의 ASUS `iptables` 명령을 그대로 사용하지 말고, UCI 또는 nftables 형식으로 다시 작성해야 합니다. 자세한 내용은 [OpenWrt 방화벽 설정](https://openwrt.org/docs/guide-user/firewall/firewall_configuration)을 참고하세요.
+
+커스텀 펌웨어 설치에는 설정 초기화, 부팅 불가 및 제조사 지원 제한 위험이 있습니다. 먼저 자신의 정확한 공유기 모델과 하드웨어 버전이 해당 펌웨어를 공식적으로 지원하는지 확인하세요. 이 문서에서는 커스텀 펌웨어 설치 및 자동 실행 스크립트 구성까지 다루지 않습니다.
+
 ## 5. Home Assistant 확인
 
 rethink는 MQTT Discovery를 사용합니다. `config.json`의 MQTT 주소, ID/PW 및 `discovery_prefix`가 Home Assistant의 MQTT 브로커 설정과 일치해야 합니다.
