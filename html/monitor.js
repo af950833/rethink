@@ -3,16 +3,15 @@ document.addEventListener('DOMContentLoaded', function () {})
 let ws
 let reconnectTimer
 
-const baseUrl = new URL(window.location)
-baseUrl.search = ''
-baseUrl.hash = ''
-
 get('device_id').innerText = new URLSearchParams(window.location.search).get('id')
 get('device_status').innerText = 'Waiting for rethink connection...'
 
 function connect() {
     clearTimeout(reconnectTimer)
-    let ws = new WebSocket(baseUrl + `device${window.location.search}`)
+    const socketUrl = new URL('/device', window.location.href)
+    socketUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    socketUrl.search = window.location.search
+    ws = new WebSocket(socketUrl)
 
     ws.onclose = () => {
         reconnectTimer = setTimeout(connect, 5000)
