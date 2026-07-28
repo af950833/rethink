@@ -682,7 +682,11 @@ export default class Device extends TLVDevice {
             this.addTimerField(config, 0x21b, 'stoptimer', 'Turn-off timer', 'mdi:timer-stop', 24)
         }
 
-        if (this.raw_clip_state[0x2cc] & 2 || isPac910604) {
+        if (isPac910604) {
+            // This PAC reports 0x20D in every full state response, so expose a
+            // regular state-backed switch instead of an assumed-state control.
+            this.addConfigSwitchField(config, 0x20d, 'energysave', 'Energy saving', 'mdi:flower')
+        } else if (this.raw_clip_state[0x2cc] & 2) {
             // Can be enabled only when running in the cooling mode
             this.addModeDependentConfigSwitchField(
                 config,

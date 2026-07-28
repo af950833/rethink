@@ -88,6 +88,7 @@ describe(MODEL_ID, () => {
         for (const component of ['energysave', 'autodry', 'displaylight', 'smartcare']) {
             assert.equal(components[component].platform, 'switch')
         }
+        assert.equal(components.energysave.optimistic, undefined)
 
         for (const [component, expectedTag] of [
             ['energysave', 0x20d],
