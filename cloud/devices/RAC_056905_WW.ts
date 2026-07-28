@@ -278,7 +278,7 @@ export default class Device extends TLVDevice {
                     ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
                     /* TODO: get from 0x2c2 */
                     fan_modes: isPac910604
-                        ? ['low', 'medium', 'high', 'long power', 'cool power']
+                        ? ['약풍', '중풍', '강풍', '롱파워', '쿨파워']
                         : ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
                     /* TODO: get allowed op modes from 0x2c1 */
                 } satisfies ClimateComponent,
@@ -355,10 +355,10 @@ export default class Device extends TLVDevice {
             read_xform: (raw) => {
                 if (isPac910604) {
                     const pacModes: Record<number, string> = {
-                        0x0202: 'low',
-                        0x0404: 'medium',
-                        0x0606: 'high',
-                        0x0909: 'long power',
+                        0x0202: '약풍',
+                        0x0404: '중풍',
+                        0x0606: '강풍',
+                        0x0909: '롱파워',
                     }
                     return pacModes[raw]
                 }
@@ -378,16 +378,16 @@ export default class Device extends TLVDevice {
             },
             write_xform: (val) => {
                 if (isPac910604) {
-                    if (val === 'cool power') {
+                    if (val === '쿨파워') {
                         this.setProperty('coolpower-', 'ON')
                         return null
                     }
                     this.setProperty('coolpower-', 'OFF')
                     const pacModes: Record<string, number> = {
-                        low: 0x0202,
-                        medium: 0x0404,
-                        high: 0x0606,
-                        'long power': 0x0909,
+                        약풍: 0x0202,
+                        중풍: 0x0404,
+                        강풍: 0x0606,
+                        롱파워: 0x0909,
                     }
                     return pacModes[val]
                 }
@@ -415,23 +415,23 @@ export default class Device extends TLVDevice {
         })
 
         if (isPac910604) {
-            config['components']['climate']['swing_modes'] = ['on', 'off']
-            config['components']['climate']['swing_horizontal_modes'] = ['off', 'right', 'left', 'left-right']
+            config['components']['climate']['swing_modes'] = ['정지', '회전']
+            config['components']['climate']['swing_horizontal_modes'] = ['정지', '우측', '좌측', '좌우']
             this.addField(config, {
                 id: 0x205,
                 name: 'swing_mode',
                 comp: 'climate',
-                read_xform: (raw) => (raw ? 'on' : 'off'),
-                write_xform: (val) => (val === 'on' ? 1 : 0),
+                read_xform: (raw) => (raw ? '회전' : '정지'),
+                write_xform: (val) => (val === '회전' ? 1 : 0),
             })
             this.addField(config, {
                 id: 0x206,
                 name: 'swing_horizontal_mode',
                 comp: 'climate',
                 read_xform: (raw) =>
-                    ({ 0x0000: 'off', 0x0001: 'right', 0x0100: 'left', 0x0101: 'left-right' })[raw],
+                    ({ 0x0000: '정지', 0x0001: '우측', 0x0100: '좌측', 0x0101: '좌우' })[raw],
                 write_xform: (val) =>
-                    ({ off: 0x0000, right: 0x0001, left: 0x0100, 'left-right': 0x0101 })[val],
+                    ({ 정지: 0x0000, 우측: 0x0001, 좌측: 0x0100, 좌우: 0x0101 })[val],
             })
         } else if (this.raw_clip_state[0x2cd] & 4) {
             config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
@@ -612,14 +612,22 @@ export default class Device extends TLVDevice {
         const jetCool: boolean = !!(this.raw_clip_state[0x2cd] & 1)
         const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
         if (isPac910604) {
-            this.addJetField(config, 0x236, 'coolpower', 'Cool power', 'mdi:wind-power', true, false)
-            const coolPowerField = this.fields_by_id[0x236]
-            const originalReadCallback = coolPowerField.read_callback
-            coolPowerField.read_callback = (val) => {
-                const accepted = originalReadCallback ? originalReadCallback(val) : true
-                if (accepted && val === 'ON') this.HA.publishProperty(this.id, 'climate-fan_mode', 'cool power')
-                return accepted
-            }
+            this.addField(
+                config,
+                {
+                    id: 0x236,
+                    name: '',
+                    comp: 'coolpower',
+                    read_xform: (raw) => (raw ? 'ON' : 'OFF'),
+                    write_xform: (val) => (val === 'ON' ? 1 : 0),
+                    read_callback: (val) => {
+                        this.jetMode = val === 'ON'
+                        if (this.jetMode) this.HA.publishProperty(this.id, 'climate-fan_mode', '쿨파워')
+                        return false
+                    },
+                },
+                false,
+            )
         } else if (jetCool || jetHeat) {
             this.addJetField(
                 config,
