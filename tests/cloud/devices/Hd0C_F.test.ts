@@ -6,6 +6,7 @@ import { MockHAConnection, MockThinq2Device, buf, hex } from '@/tests/helpers/mo
 
 const META: Metadata = { modelId: 'Hd0C_F', modelName: 'Hd0C_F', swVersion: '2.10.93' }
 const LIVE_RINSING = buf('aa2120eb001906003201040100010501020000000800000000060002036600fabb')
+const LIVE_POWER_OFF = buf('aa2120eb0019000110011001000702010200000080000000000200060366005abb')
 const LIVE_FULL_STATUS = buf(
     'aa0020cf002e0101070600230104010200020103050101000080000000006617023a0f4604330200000100000000001c00000000a7bb',
 )
@@ -101,5 +102,17 @@ describe('Hd0C_F', () => {
         const { ha, thinq } = makeDevice()
         thinq.emit('data', LIVE_FULL_STATUS)
         assert.equal(ha.devices['washer-id'].properties.tub_clean_count, 23)
+    })
+
+    test('hides stale course, spin and water level while powered off', () => {
+        const { ha, thinq } = makeDevice()
+        thinq.emit('data', LIVE_POWER_OFF)
+        const p = ha.devices['washer-id'].properties
+
+        assert.equal(p.power, 'OFF')
+        assert.equal(p.status, '꺼짐')
+        assert.equal(p.course, '-')
+        assert.equal(p.spin, '-')
+        assert.equal(p.water_level, '-')
     })
 })
