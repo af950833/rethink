@@ -32,6 +32,7 @@ describe('2RES2VE300UA2', () => {
             'door_open_duration_today',
             'door_open_warning',
             'fresh_air_filter',
+            'power_experimental',
         ])
             assert.ok(c[name], name)
         assert.equal((c.fridge as { platform: string }).platform, 'climate')
@@ -68,6 +69,7 @@ describe('2RES2VE300UA2', () => {
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
         assert.equal(p.fresh_air_filter, '양호')
+        assert.equal(p.power_experimental, 120)
     })
 
     test('writes the live-captured fridge and freezer command layouts', () => {
