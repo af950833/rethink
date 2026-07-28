@@ -283,7 +283,6 @@ docker logs --tail 200 rethink
 4. 로그인과 약관 동의를 마치면 브라우저가 완료 또는 빈 화면으로 이동할 수 있습니다. 이때 로그인 창의 **주소 표시줄에 있는 URL 전체를 복사**합니다.
 5. rethink 관리 화면으로 돌아와 URL 입력란에 복사한 주소를 그대로 붙여넣습니다.
 6. 확인 또는 제출 버튼을 눌러 인증을 완료합니다.
-7. 로그인된 Home과 기기 목록이 표시되는지 확인하고 필요한 기기의 bridge를 켭니다.
 
 URL의 일부만 복사하거나 로그인 전 주소를 붙여넣으면 인증이 완료되지 않습니다. 로그인 완료 후 마지막으로 표시된 URL 전체를 `https://`부터 끝까지 복사하세요. LG 계정 비밀번호를 rethink의 URL 입력란에 직접 입력하는 것은 아닙니다.
 
@@ -382,7 +381,13 @@ which conntrack
 docker logs -f rethink
 ```
 
-관리 화면의 Connected devices에 기기가 나타나고 bridge 연결 및 LG 앱 사용이 모두 정상인지 확인합니다. 세탁기와 냉장고에도 DNAT를 추가했다면 각 IP에 대해 4-4의 conntrack 명령도 실행합니다.
+DNAT와 conntrack 적용 후 rethink 웹 관리 화면을 열고 1~2분 정도 기다립니다. **Connected devices**에 적용한 LG 기기가 나타나는지 먼저 확인한 다음, 해당 기기의 **Bridge**를 활성화합니다.
+
+Bridge를 활성화하면 rethink가 기기의 통신을 LG ThinQ 클라우드로 전달합니다. 따라서 rethink가 제공하는 로컬 MQTT 엔티티뿐 아니라 LG ThinQ 앱과 기존 Home Assistant의 ThinQ 클라우드 기반 컴포넌트도 함께 사용할 수 있습니다.
+
+기기가 나타나기 전에 Bridge를 먼저 켤 필요는 없습니다. 2분 이상 기다려도 보이지 않으면 Bridge 설정을 반복하기보다 기기 IP, DNAT 규칙, conntrack 삭제 결과와 rethink 로그를 먼저 확인하세요.
+
+세탁기와 냉장고에도 DNAT를 추가했다면 각 IP에 대해 4-4의 conntrack 명령을 실행하고, 기기가 Connected devices에 나타난 뒤 각각 Bridge를 활성화합니다.
 
 ### 4-6. 공유기 재부팅 후 재적용
 
