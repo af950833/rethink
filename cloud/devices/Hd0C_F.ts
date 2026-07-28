@@ -145,6 +145,10 @@ export default class Device extends AABBDevice {
                     water_temp: sensor('water_temp', 'mdi:thermometer-lines'),
                     rinse: sensor('rinse', 'mdi:waves-arrow-right'),
                     water_level: sensor('water_level', 'mdi:water'),
+                    tub_clean_count: {
+                        ...sensor('tub_clean_count', 'mdi:washing-machine'),
+                        state_class: 'measurement',
+                    },
                     error: {
                         platform: 'binary_sensor',
                         unique_id: '$deviceid-error',
@@ -204,5 +208,9 @@ export default class Device extends AABBDevice {
 
         if (buf[1] === 0xeb && buf.length === 29) this.processRecord(buf.subarray(2, 29))
         else if (buf[1] === 0xec && buf.length === 56) this.processRecord(buf.subarray(2, 29))
+        // Full status sent once after the appliance reconnects. Hd0C_F byte 29
+        // is TCLCount (washes since the last tub-clean cycle); live value 0x17
+        // matched the ThinQ2 snapshot's TCLCount=23 exactly.
+        else if (buf[1] === 0xcf && buf.length === 50) this.publishProperty('tub_clean_count', buf[29])
     }
 }
