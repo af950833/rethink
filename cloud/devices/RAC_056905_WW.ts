@@ -27,6 +27,7 @@ export default class Device extends TLVDevice {
     filterChangedDate: number = 0
     filterInitialQueryTimeout: ReturnType<typeof setTimeout> | undefined
     filterQueryTimer: ReturnType<typeof setInterval> | undefined
+    pacFanOnlyStopTimeout: ReturnType<typeof setTimeout> | undefined
 
     constructor(HA: Connection, thinq: Thinq2Device, meta: Metadata) {
         super(HA, thinq)
@@ -52,6 +53,11 @@ export default class Device extends TLVDevice {
         if (this.filterQueryTimer != undefined) {
             clearInterval(this.filterQueryTimer)
             this.filterQueryTimer = undefined
+        }
+
+        if (this.pacFanOnlyStopTimeout != undefined) {
+            clearTimeout(this.pacFanOnlyStopTimeout)
+            this.pacFanOnlyStopTimeout = undefined
         }
 
         super.drop()
@@ -346,6 +352,20 @@ export default class Device extends TLVDevice {
                     return null
                 }
                 return modes2clip[val]
+            },
+            write_callback: (raw) => {
+                if (
+                    isPac910604 &&
+                    this.getModeTLV() === 5 &&
+                    (raw === 0 || raw === 1)
+                ) {
+                    if (this.pacFanOnlyStopTimeout != undefined) clearTimeout(this.pacFanOnlyStopTimeout)
+                    this.pacFanOnlyStopTimeout = setTimeout(() => {
+                        this.pacFanOnlyStopTimeout = undefined
+                        this.send([1, 1, 2, 1, 0], [{ t: 0x20f, v: 0 }])
+                    }, 1400)
+                }
+                return true
             },
             write_attach: [0x1fa, 0x1fe],
         })
