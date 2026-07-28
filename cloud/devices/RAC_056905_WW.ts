@@ -278,7 +278,7 @@ export default class Device extends TLVDevice {
                     ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
                     /* TODO: get from 0x2c2 */
                     fan_modes: isPac910604
-                        ? ['low', 'medium', 'high', 'long power']
+                        ? ['low', 'medium', 'high', 'long power', 'cool power']
                         : ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
                     /* TODO: get allowed op modes from 0x2c1 */
                 } satisfies ClimateComponent,
@@ -319,6 +319,11 @@ export default class Device extends TLVDevice {
             name: 'mode',
             comp: 'climate',
             read_xform: (raw) => {
+                if (isPac910604) {
+                    const pacModes: Record<number, string> = { 0: 'cool', 1: 'dry', 5: 'fan_only' }
+                    if (this.getPowerTLV() === 0) return 'off'
+                    return pacModes[raw]
+                }
                 const modes2ha = ['cool', 'dry', 'fan_only', undefined, 'heat', undefined, 'auto']
                 if (this.getPowerTLV() === 0) return 'off'
                 return modes2ha[raw]
@@ -330,7 +335,9 @@ export default class Device extends TLVDevice {
                 return true
             },
             write_xform: (val) => {
-                const modes2clip: Record<string, number> = { cool: 0, dry: 1, fan_only: 2, heat: 4, auto: 6 }
+                const modes2clip: Record<string, number> = isPac910604
+                    ? { cool: 0, dry: 1, fan_only: 5 }
+                    : { cool: 0, dry: 1, fan_only: 2, heat: 4, auto: 6 }
                 if (val === 'off') {
                     // Call function power (0x1f7) with value OFF
                     this.setProperty('climate-power', 'OFF')
@@ -371,6 +378,11 @@ export default class Device extends TLVDevice {
             },
             write_xform: (val) => {
                 if (isPac910604) {
+                    if (val === 'cool power') {
+                        this.setProperty('coolpower-', 'ON')
+                        return null
+                    }
+                    this.setProperty('coolpower-', 'OFF')
                     const pacModes: Record<string, number> = {
                         low: 0x0202,
                         medium: 0x0404,
@@ -404,7 +416,7 @@ export default class Device extends TLVDevice {
 
         if (isPac910604) {
             config['components']['climate']['swing_modes'] = ['on', 'off']
-            config['components']['climate']['swing_horizontal_modes'] = ['on', 'off']
+            config['components']['climate']['swing_horizontal_modes'] = ['off', 'right', 'left', 'left-right']
             this.addField(config, {
                 id: 0x205,
                 name: 'swing_mode',
@@ -416,8 +428,10 @@ export default class Device extends TLVDevice {
                 id: 0x206,
                 name: 'swing_horizontal_mode',
                 comp: 'climate',
-                read_xform: (raw) => (raw ? 'on' : 'off'),
-                write_xform: (val) => (val === 'on' ? 1 : 0),
+                read_xform: (raw) =>
+                    ({ 0x0000: 'off', 0x0001: 'right', 0x0100: 'left', 0x0101: 'left-right' })[raw],
+                write_xform: (val) =>
+                    ({ off: 0x0000, right: 0x0001, left: 0x0100, 'left-right': 0x0101 })[val],
             })
         } else if (this.raw_clip_state[0x2cd] & 4) {
             config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
@@ -599,6 +613,13 @@ export default class Device extends TLVDevice {
         const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
         if (isPac910604) {
             this.addJetField(config, 0x236, 'coolpower', 'Cool power', 'mdi:wind-power', true, false)
+            const coolPowerField = this.fields_by_id[0x236]
+            const originalReadCallback = coolPowerField.read_callback
+            coolPowerField.read_callback = (val) => {
+                const accepted = originalReadCallback ? originalReadCallback(val) : true
+                if (accepted && val === 'ON') this.HA.publishProperty(this.id, 'climate-fan_mode', 'cool power')
+                return accepted
+            }
         } else if (jetCool || jetHeat) {
             this.addJetField(
                 config,
