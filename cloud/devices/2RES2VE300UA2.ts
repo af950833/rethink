@@ -9,6 +9,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 const STATUS_LENGTH = 68
 const DOOR_WARNING_MS = 60_000
+const STATUS_POLL_MS = 60_000
 
 type DoorStats = {
     date: string
@@ -166,9 +167,27 @@ export default class Device extends AABBDevice {
     private doorOpen?: boolean
     private doorWarningTimer?: NodeJS.Timeout
     private midnightTimer?: NodeJS.Timeout
+    private statusPollTimer?: NodeJS.Timeout
     private doorStats: DoorStats
 
     start() {
+        this.sendStatusQuery()
+        if (this.statusPollTimer) clearInterval(this.statusPollTimer)
+        this.statusPollTimer = setInterval(() => this.sendStatusQuery(), STATUS_POLL_MS)
+        this.statusPollTimer.unref()
+    }
+
+    drop() {
+        if (this.statusPollTimer) clearInterval(this.statusPollTimer)
+        if (this.midnightTimer) clearInterval(this.midnightTimer)
+        if (this.doorWarningTimer) clearTimeout(this.doorWarningTimer)
+        this.statusPollTimer = undefined
+        this.midnightTimer = undefined
+        this.doorWarningTimer = undefined
+        super.drop()
+    }
+
+    private sendStatusQuery() {
         this.send(Buffer.from('F0ED1211010000010400', 'hex'))
     }
 

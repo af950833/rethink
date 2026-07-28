@@ -100,4 +100,17 @@ describe('2RES2VE300UA2', () => {
         dev.setProperty('express_freeze', 'ON')
         assert.equal(thinq.outbox[0][4 + 3], 2)
     })
+
+    test('starts periodic status polling and clears it when dropped', () => {
+        const { thinq, dev } = makeDevice()
+        thinq.resetRecorder()
+
+        dev.start()
+        assert.equal(thinq.outbox.length, 1)
+        assert.equal(hex(thinq.outbox[0]), 'AA0EF0ED1211010000010400EBBB')
+        assert.ok((dev as unknown as { statusPollTimer?: NodeJS.Timeout }).statusPollTimer)
+
+        dev.drop()
+        assert.equal((dev as unknown as { statusPollTimer?: NodeJS.Timeout }).statusPollTimer, undefined)
+    })
 })
