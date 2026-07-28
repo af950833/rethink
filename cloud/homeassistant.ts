@@ -184,6 +184,7 @@ export type DeviceDiscovery = {
 export type ClimateComponent = ComponentInfo & {
     platform: 'climate'
     action_topic?: string
+    current_humidity_topic?: string
     temperature_unit?: 'C' | 'F'
     temp_step?: number
     precision?: number

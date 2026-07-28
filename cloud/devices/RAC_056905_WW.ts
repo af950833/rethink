@@ -301,6 +301,15 @@ export default class Device extends TLVDevice {
             writable: false,
             read_xform: (raw) => raw / 2,
         })
+        if (isPac910604) {
+            this.addField(config, {
+                id: 0x336,
+                name: 'current_humidity',
+                comp: 'climate',
+                state_topic: 'topic',
+                writable: false,
+            })
+        }
         this.addField(config, {
             id: 0x1f7,
             name: 'power',
