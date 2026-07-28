@@ -156,31 +156,31 @@ DNAT 예시에서 TCP 443을 컨테이너의 TCP 4433으로 전달한다면 다�
 
 실제 MQTT 계정과 비밀번호가 들어간 `config.json`은 Git에 commit하지 마세요.
 
-### 4. Compose 파일 작성
-
-`~/docker/compose.yaml` 예시:
-
-```yaml
-services:
-    rethink:
-        build:
-            context: ./rethink
-        image: rethink-lg-bridge:local
-        container_name: rethink
-        restart: unless-stopped
-        network_mode: host
-        volumes:
-            - ./rethink-data:/app/data
-```
-
-`network_mode: host`에서는 별도의 `ports` 항목을 사용하지 않습니다.
-
-### 5. 빌드 및 실행
+### 4. 이미지 빌드
 
 ```sh
-cd ~/docker
-docker compose up -d --build
-docker compose logs -f rethink
+cd ~/docker/rethink
+docker build --pull -t rethink-lg-bridge:local .
+```
+
+### 5. 컨테이너 실행
+
+```sh
+docker run -d \
+  --name rethink \
+  --restart unless-stopped \
+  --network host \
+  -v "$HOME/docker/rethink-data:/app/data" \
+  rethink-lg-bridge:local
+```
+
+`--network host`를 사용하므로 별도의 `-p` 포트 매핑은 필요하지 않습니다.
+
+실행 상태와 로그를 확인합니다.
+
+```sh
+docker ps --filter name=rethink
+docker logs -f rethink
 ```
 
 `ca.key`와 `ca.cert`는 이미지 빌드 시가 아니라 컨테이너 최초 실행 시 `/app/data`에 자동 생성됩니다. 같은 데이터 폴더를 계속 연결하면 이미지와 컨테이너를 교체해도 기존 CA와 bridge 상태가 유지됩니다.
@@ -190,12 +190,22 @@ docker compose logs -f rethink
 ```sh
 cd ~/docker/rethink
 git pull --ff-only origin master
+docker build --pull -t rethink-lg-bridge:local .
 
-cd ~/docker
-docker compose up -d --build
+docker stop rethink
+docker rm rethink
+
+docker run -d \
+  --name rethink \
+  --restart unless-stopped \
+  --network host \
+  -v "$HOME/docker/rethink-data:/app/data" \
+  rethink-lg-bridge:local
 ```
 
 업데이트 전 `~/docker/rethink-data`를 백업하는 것을 권장합니다.
+
+`docker stop`과 `docker rm`은 컨테이너만 제거합니다. 위 명령은 호스트의 `~/docker/rethink-data`를 삭제하지 않으므로 기존 `config.json`, CA 및 bridge 상태가 그대로 유지됩니다.
 
 ## 공유기 DNAT 적용 전 확인
 
@@ -241,7 +251,7 @@ data/
 
 특히 `state/`에는 LG bridge 연결에 사용하는 기기 인증서와 개인키가 포함될 수 있습니다.
 
-컨테이너를 다시 만들 때도 동일한 `/app/data` 볼륨을 연결하세요. 데이터 폴더를 삭제하거나 `docker compose down -v`로 관련 볼륨을 제거하면 CA 및 bridge 상태를 잃을 수 있습니다.
+컨테이너를 다시 만들 때도 항상 동일한 `-v "$HOME/docker/rethink-data:/app/data"` 옵션을 사용하세요. 호스트의 `~/docker/rethink-data` 폴더를 삭제하면 CA 및 bridge 상태를 잃을 수 있습니다.
 
 ## 관리 화면과 도구
 
