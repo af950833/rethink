@@ -28,10 +28,30 @@ describe('2RES2VE300UA2', () => {
             'express_cool',
             'express_freeze',
             'door',
+            'door_open_count_today',
+            'door_open_duration_today',
+            'door_open_warning',
             'fresh_air_filter',
         ])
             assert.ok(c[name], name)
         assert.equal(c.flex_setpoint, undefined)
+    })
+
+    test('counts door openings and accumulates only completed open time', () => {
+        const { ha, dev } = makeDevice()
+        const processDoor = (dev as unknown as { processDoor: (open: boolean, now: number) => void }).processDoor.bind(
+            dev,
+        )
+
+        processDoor(false, 1_000)
+        processDoor(true, 2_000)
+        processDoor(true, 5_000)
+        assert.equal(ha.devices[DEVICE_ID].properties.door_open_count_today, 1)
+        assert.equal(ha.devices[DEVICE_ID].properties.door_open_duration_today, 0)
+
+        processDoor(false, 12_000)
+        assert.equal(ha.devices[DEVICE_ID].properties.door_open_duration_today, 0.17)
+        assert.equal(ha.devices[DEVICE_ID].properties.door_open_warning, 'OFF')
     })
 
     test('decodes the live status consistently with smartthinq_sensors', () => {
