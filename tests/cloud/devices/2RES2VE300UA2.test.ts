@@ -23,8 +23,8 @@ describe('2RES2VE300UA2', () => {
         const { ha } = makeDevice()
         const c = ha.devices[DEVICE_ID].config!.components as Record<string, unknown>
         for (const name of [
-            'fridge_setpoint',
-            'freezer_setpoint',
+            'fridge',
+            'freezer',
             'express_cool',
             'express_freeze',
             'door',
@@ -34,6 +34,8 @@ describe('2RES2VE300UA2', () => {
             'fresh_air_filter',
         ])
             assert.ok(c[name], name)
+        assert.equal((c.fridge as { platform: string }).platform, 'climate')
+        assert.equal((c.freezer as { platform: string }).platform, 'climate')
         assert.equal(c.flex_setpoint, undefined)
     })
 
@@ -58,8 +60,10 @@ describe('2RES2VE300UA2', () => {
         const { ha, thinq } = makeDevice()
         thinq.emit('data', LIVE_STATUS)
         const p = ha.devices[DEVICE_ID].properties
-        assert.equal(p.fridge_setpoint, 3)
-        assert.equal(p.freezer_setpoint, -18)
+        assert.equal(p.fridge_temperature, 3)
+        assert.equal(p.freezer_temperature, -18)
+        assert.equal(p.fridge_mode, 'auto')
+        assert.equal(p.freezer_mode, 'auto')
         assert.equal(p.express_cool, 'OFF')
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
@@ -70,14 +74,14 @@ describe('2RES2VE300UA2', () => {
         const { thinq, dev } = makeDevice()
 
         thinq.resetRecorder()
-        dev.setProperty('fridge_setpoint', '4')
+        dev.setProperty('fridge_temperature', '4')
         assert.equal(
             hex(thinq.outbox[0]),
             'AA7CF017FF0400FFFFFFFFFFFFFFFFFFFF00FFFFFFFFFFFFFF000000FFFF00FFFFFFFF00FFFFFFFFFFFFFFFFFF00FFFFFF1EFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0AFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFBABB',
         )
 
         thinq.resetRecorder()
-        dev.setProperty('freezer_setpoint', '-19')
+        dev.setProperty('freezer_temperature', '-19')
         assert.equal(
             hex(thinq.outbox[0]),
             'AA7CF017FF0005FFFFFFFFFFFFFFFFFFFF00FFFFFFFFFFFFFF000000FFFF00FFFFFFFF00FFFFFFFFFFFFFFFFFF00FFFFFF1EFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0AFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA5BB',

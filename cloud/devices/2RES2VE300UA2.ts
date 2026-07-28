@@ -54,29 +54,35 @@ export default class Device extends AABBDevice {
             allowExtendedType({
                 ...HADevice.config(meta, { name: 'LG Refrigerator' }),
                 components: {
-                    fridge_setpoint: {
-                        platform: 'number',
-                        device_class: 'temperature',
-                        unique_id: '$deviceid-fridge_setpoint',
-                        state_topic: '$this/fridge_setpoint',
-                        command_topic: '$this/fridge_setpoint/set',
-                        name: 'Fridge temperature',
-                        unit_of_measurement: '°C',
-                        min: 1,
-                        max: 7,
-                        step: 1,
+                    fridge: {
+                        platform: 'climate',
+                        unique_id: '$deviceid-fridge_climate',
+                        name: 'Fridge',
+                        temperature_unit: 'C',
+                        temperature_state_topic: '$this/fridge_temperature',
+                        temperature_command_topic: '$this/fridge_temperature/set',
+                        mode_state_topic: '$this/fridge_mode',
+                        modes: ['auto'],
+                        min_temp: 1,
+                        max_temp: 7,
+                        temp_step: 1,
+                        precision: 1,
+                        icon: 'mdi:fridge-top',
                     },
-                    freezer_setpoint: {
-                        platform: 'number',
-                        device_class: 'temperature',
-                        unique_id: '$deviceid-freezer_setpoint',
-                        state_topic: '$this/freezer_setpoint',
-                        command_topic: '$this/freezer_setpoint/set',
-                        name: 'Freezer temperature',
-                        unit_of_measurement: '°C',
-                        min: -23,
-                        max: -15,
-                        step: 1,
+                    freezer: {
+                        platform: 'climate',
+                        unique_id: '$deviceid-freezer_climate',
+                        name: 'Freezer',
+                        temperature_unit: 'C',
+                        temperature_state_topic: '$this/freezer_temperature',
+                        temperature_command_topic: '$this/freezer_temperature/set',
+                        mode_state_topic: '$this/freezer_mode',
+                        modes: ['auto'],
+                        min_temp: -23,
+                        max_temp: -15,
+                        temp_step: 1,
+                        precision: 1,
+                        icon: 'mdi:fridge-bottom',
                     },
                     express_cool: {
                         platform: 'switch',
@@ -165,8 +171,10 @@ export default class Device extends AABBDevice {
     }
 
     private processStatus(rec: Buffer) {
-        this.publishProperty('fridge_setpoint', fridgeRaw(rec[1]))
-        this.publishProperty('freezer_setpoint', freezerRaw(rec[2]))
+        this.publishProperty('fridge_temperature', fridgeRaw(rec[1]))
+        this.publishProperty('freezer_temperature', freezerRaw(rec[2]))
+        this.publishProperty('fridge_mode', 'auto')
+        this.publishProperty('freezer_mode', 'auto')
         this.publishProperty('express_freeze', rec[3] === 2 ? 'ON' : 'OFF')
         this.publishProperty('express_cool', rec[16] === 1 ? 'ON' : 'OFF')
         this.processDoor(rec[7] === 1)
@@ -272,9 +280,9 @@ export default class Device extends AABBDevice {
     }
 
     setProperty(prop: string, mqttValue: string) {
-        if (prop === 'fridge_setpoint') {
+        if (prop === 'fridge_temperature') {
             this.sendSetting(1, fridgeRaw(Number(mqttValue)))
-        } else if (prop === 'freezer_setpoint') {
+        } else if (prop === 'freezer_temperature') {
             this.sendSetting(2, freezerRaw(Number(mqttValue)))
         } else if (prop === 'express_cool') {
             this.sendSetting(16, mqttValue === 'ON' ? 1 : 0)
