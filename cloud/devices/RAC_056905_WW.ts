@@ -186,7 +186,9 @@ export default class Device extends TLVDevice {
             iduRunning = this.raw_clip_state[iduRunningTLVNum] !== 0
         }
 
-        const modes2ha = ['cooling', 'drying', 'fan', undefined, 'heating']
+        const modes2ha = this.meta.modelId === 'PAC_910604_WW'
+            ? ['cooling', 'drying', undefined, undefined, undefined, 'fan']
+            : ['cooling', 'drying', 'fan', undefined, 'heating']
         let action: string | undefined = undefined
         let increaseQueryInterval = false
         if (this.getPowerTLV() === 0) {
