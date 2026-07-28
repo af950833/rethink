@@ -275,6 +275,7 @@ export default class Device extends TLVDevice {
                     /* TODO: some devices report these temp ranges via tags 0x2e1 - 0x2ec */
                     min_temp: 18,
                     max_temp: 30,
+                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
                     /* TODO: get from 0x2c2 */
                     fan_modes: isPac910604
                         ? ['low', 'medium', 'high', 'long power']
@@ -345,6 +346,15 @@ export default class Device extends TLVDevice {
             name: 'fan_mode',
             comp: 'climate',
             read_xform: (raw) => {
+                if (isPac910604) {
+                    const pacModes: Record<number, string> = {
+                        0x0202: 'low',
+                        0x0404: 'medium',
+                        0x0606: 'high',
+                        0x0909: 'long power',
+                    }
+                    return pacModes[raw]
+                }
                 const modes2ha = [
                     undefined,
                     undefined,
@@ -360,6 +370,15 @@ export default class Device extends TLVDevice {
                 return modes2ha[raw]
             },
             write_xform: (val) => {
+                if (isPac910604) {
+                    const pacModes: Record<string, number> = {
+                        low: 0x0202,
+                        medium: 0x0404,
+                        high: 0x0606,
+                        'long power': 0x0909,
+                    }
+                    return pacModes[val]
+                }
                 const modes2clip: Record<string, number> = {
                     'very low': 2,
                     low: 3,
@@ -383,7 +402,24 @@ export default class Device extends TLVDevice {
             write_attach: [0x1f9, 0x1fa],
         })
 
-        if (this.raw_clip_state[0x2cd] & 4) {
+        if (isPac910604) {
+            config['components']['climate']['swing_modes'] = ['on', 'off']
+            config['components']['climate']['swing_horizontal_modes'] = ['on', 'off']
+            this.addField(config, {
+                id: 0x205,
+                name: 'swing_mode',
+                comp: 'climate',
+                read_xform: (raw) => (raw ? 'on' : 'off'),
+                write_xform: (val) => (val === 'on' ? 1 : 0),
+            })
+            this.addField(config, {
+                id: 0x206,
+                name: 'swing_horizontal_mode',
+                comp: 'climate',
+                read_xform: (raw) => (raw ? 'on' : 'off'),
+                write_xform: (val) => (val === 'on' ? 1 : 0),
+            })
+        } else if (this.raw_clip_state[0x2cd] & 4) {
             config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
             this.addField(config, {
                 id: 0x321,
@@ -561,7 +597,9 @@ export default class Device extends TLVDevice {
 
         const jetCool: boolean = !!(this.raw_clip_state[0x2cd] & 1)
         const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
-        if (jetCool || jetHeat) {
+        if (isPac910604) {
+            this.addJetField(config, 0x236, 'coolpower', 'Cool power', 'mdi:wind-power', true, false)
+        } else if (jetCool || jetHeat) {
             this.addJetField(
                 config,
                 0x323,
@@ -803,7 +841,9 @@ export default class Device extends TLVDevice {
         jetHeat: boolean,
     ) {
         const descFull =
-            desc + ' ' + (jetCool ? 'cool' : '') + (jetCool && jetHeat ? '/' : '') + (jetHeat ? 'heat' : '')
+            desc === 'Cool power'
+                ? desc
+                : desc + ' ' + (jetCool ? 'cool' : '') + (jetCool && jetHeat ? '/' : '') + (jetHeat ? 'heat' : '')
 
         const comp = {
             platform: 'switch',
