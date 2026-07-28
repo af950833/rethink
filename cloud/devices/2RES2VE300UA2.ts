@@ -9,7 +9,6 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 const STATUS_LENGTH = 68
 const DOOR_WARNING_MS = 60_000
-const STATUS_POLL_MS = 60_000
 
 type DoorStats = {
     date: string
@@ -145,17 +144,6 @@ export default class Device extends AABBDevice {
                         device_class: 'enum',
                         options: ['양호', '교체 필요'],
                     },
-                    power_experimental: {
-                        platform: 'sensor',
-                        device_class: 'power',
-                        state_class: 'measurement',
-                        unique_id: '$deviceid-power_experimental',
-                        state_topic: '$this/power_experimental',
-                        name: 'Power (experimental)',
-                        unit_of_measurement: 'W',
-                        suggested_display_precision: 0,
-                        icon: 'mdi:flash',
-                    },
                 },
             }),
         )
@@ -167,27 +155,9 @@ export default class Device extends AABBDevice {
     private doorOpen?: boolean
     private doorWarningTimer?: NodeJS.Timeout
     private midnightTimer?: NodeJS.Timeout
-    private statusPollTimer?: NodeJS.Timeout
     private doorStats: DoorStats
 
     start() {
-        this.sendStatusQuery()
-        if (this.statusPollTimer) clearInterval(this.statusPollTimer)
-        this.statusPollTimer = setInterval(() => this.sendStatusQuery(), STATUS_POLL_MS)
-        this.statusPollTimer.unref()
-    }
-
-    drop() {
-        if (this.statusPollTimer) clearInterval(this.statusPollTimer)
-        if (this.midnightTimer) clearInterval(this.midnightTimer)
-        if (this.doorWarningTimer) clearTimeout(this.doorWarningTimer)
-        this.statusPollTimer = undefined
-        this.midnightTimer = undefined
-        this.doorWarningTimer = undefined
-        super.drop()
-    }
-
-    private sendStatusQuery() {
         this.send(Buffer.from('F0ED1211010000010400', 'hex'))
     }
 
@@ -209,7 +179,6 @@ export default class Device extends AABBDevice {
         this.publishProperty('express_cool', rec[16] === 1 ? 'ON' : 'OFF')
         this.processDoor(rec[7] === 1)
         this.publishProperty('fresh_air_filter', rec[4] === 3 ? '교체 필요' : '양호')
-        if (rec[64] !== 0xff) this.publishProperty('power_experimental', rec[64])
     }
 
     private statsPath() {

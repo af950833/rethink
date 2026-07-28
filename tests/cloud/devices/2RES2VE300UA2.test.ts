@@ -32,7 +32,6 @@ describe('2RES2VE300UA2', () => {
             'door_open_duration_today',
             'door_open_warning',
             'fresh_air_filter',
-            'power_experimental',
         ])
             assert.ok(c[name], name)
         assert.equal((c.fridge as { platform: string }).platform, 'climate')
@@ -69,7 +68,6 @@ describe('2RES2VE300UA2', () => {
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
         assert.equal(p.fresh_air_filter, '양호')
-        assert.equal(p.power_experimental, 120)
     })
 
     test('writes the live-captured fridge and freezer command layouts', () => {
@@ -99,18 +97,5 @@ describe('2RES2VE300UA2', () => {
         thinq.resetRecorder()
         dev.setProperty('express_freeze', 'ON')
         assert.equal(thinq.outbox[0][4 + 3], 2)
-    })
-
-    test('starts periodic status polling and clears it when dropped', () => {
-        const { thinq, dev } = makeDevice()
-        thinq.resetRecorder()
-
-        dev.start()
-        assert.equal(thinq.outbox.length, 1)
-        assert.equal(hex(thinq.outbox[0]), 'AA0EF0ED1211010000010400EBBB')
-        assert.ok((dev as unknown as { statusPollTimer?: NodeJS.Timeout }).statusPollTimer)
-
-        dev.drop()
-        assert.equal((dev as unknown as { statusPollTimer?: NodeJS.Timeout }).statusPollTimer, undefined)
     })
 })
