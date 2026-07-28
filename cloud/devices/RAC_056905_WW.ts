@@ -259,6 +259,7 @@ export default class Device extends TLVDevice {
     }
 
     initMakeSetConfig() {
+        const isPac910604 = this.meta.modelId === 'PAC_910604_WW'
         const config: DeviceDiscovery & { components: { climate: ClimateComponent } } = allowExtendedType({
             ...HADevice.config(this.meta, { name: 'LG Air Conditioner' }),
             components: {
@@ -275,7 +276,9 @@ export default class Device extends TLVDevice {
                     min_temp: 18,
                     max_temp: 30,
                     /* TODO: get from 0x2c2 */
-                    fan_modes: ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
+                    fan_modes: isPac910604
+                        ? ['low', 'medium', 'high', 'long power']
+                        : ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
                     /* TODO: get allowed op modes from 0x2c1 */
                 } satisfies ClimateComponent,
             },
@@ -352,6 +355,7 @@ export default class Device extends TLVDevice {
                     'very high',
                     undefined,
                     'auto',
+                    'long power',
                 ]
                 return modes2ha[raw]
             },
@@ -363,6 +367,7 @@ export default class Device extends TLVDevice {
                     high: 5,
                     'very high': 6,
                     auto: 8,
+                    'long power': 9,
                 }
                 return modes2clip[val]
             },
@@ -557,7 +562,15 @@ export default class Device extends TLVDevice {
         const jetCool: boolean = !!(this.raw_clip_state[0x2cd] & 1)
         const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
         if (jetCool || jetHeat) {
-            this.addJetField(config, 0x323, 'jet', 'Jet', 'mdi:wind-power', jetCool, jetHeat)
+            this.addJetField(
+                config,
+                0x323,
+                'jet',
+                isPac910604 ? 'Cool power' : 'Jet',
+                'mdi:wind-power',
+                jetCool,
+                jetHeat,
+            )
         }
 
         if (this.raw_clip_state[0x2d3] & 1) {
