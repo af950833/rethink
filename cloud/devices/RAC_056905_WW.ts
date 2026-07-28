@@ -192,9 +192,10 @@ export default class Device extends TLVDevice {
             iduRunning = this.raw_clip_state[iduRunningTLVNum] !== 0
         }
 
-        const modes2ha = this.meta.modelId === 'PAC_910604_WW'
-            ? ['cooling', 'drying', undefined, undefined, undefined, 'fan']
-            : ['cooling', 'drying', 'fan', undefined, 'heating']
+        const modes2ha =
+            this.meta.modelId === 'PAC_910604_WW'
+                ? ['cooling', 'drying', undefined, undefined, undefined, 'fan']
+                : ['cooling', 'drying', 'fan', undefined, 'heating']
         let action: string | undefined = undefined
         let increaseQueryInterval = false
         if (this.getPowerTLV() === 0) {
@@ -363,11 +364,7 @@ export default class Device extends TLVDevice {
                 return modes2clip[val]
             },
             write_callback: (raw) => {
-                if (
-                    isPac910604 &&
-                    this.getModeTLV() === 5 &&
-                    (raw === 0 || raw === 1)
-                ) {
+                if (isPac910604 && this.getModeTLV() === 5 && (raw === 0 || raw === 1)) {
                     if (this.pacFanOnlyStopTimeout != undefined) clearTimeout(this.pacFanOnlyStopTimeout)
                     this.pacFanOnlyStopTimeout = setTimeout(() => {
                         this.pacFanOnlyStopTimeout = undefined
@@ -465,10 +462,8 @@ export default class Device extends TLVDevice {
                 id: 0x206,
                 name: 'swing_horizontal_mode',
                 comp: 'climate',
-                read_xform: (raw) =>
-                    ({ 0x0000: '정지', 0x0001: '우측', 0x0100: '좌측', 0x0101: '좌우' })[raw],
-                write_xform: (val) =>
-                    ({ 정지: 0x0000, 우측: 0x0001, 좌측: 0x0100, 좌우: 0x0101 })[val],
+                read_xform: (raw) => ({ 0x0000: '정지', 0x0001: '우측', 0x0100: '좌측', 0x0101: '좌우' })[raw],
+                write_xform: (val) => ({ 정지: 0x0000, 우측: 0x0001, 좌측: 0x0100, 좌우: 0x0101 })[val],
             })
         } else if (this.raw_clip_state[0x2cd] & 4) {
             config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
@@ -687,7 +682,7 @@ export default class Device extends TLVDevice {
             this.addTimerField(config, 0x21b, 'stoptimer', 'Turn-off timer', 'mdi:timer-stop', 24)
         }
 
-        if (this.raw_clip_state[0x2cc] & 2) {
+        if (this.raw_clip_state[0x2cc] & 2 || isPac910604) {
             // Can be enabled only when running in the cooling mode
             this.addModeDependentConfigSwitchField(
                 config,
@@ -700,7 +695,11 @@ export default class Device extends TLVDevice {
             )
         }
 
-        if (this.raw_clip_state[0x2cc] & 4) {
+        if (isPac910604) {
+            // PAC_910604_WW reports these live values even though its legacy
+            // 0x2CC capability bits do not advertise them.
+            this.addConfigSwitchField(config, 0x20e, 'autodry', 'Auto dry', 'mdi:hair-dryer')
+        } else if (this.raw_clip_state[0x2cc] & 4) {
             const compADry = {
                 platform: 'binary_sensor',
                 unique_id: '$deviceid-autodry',
@@ -734,6 +733,14 @@ export default class Device extends TLVDevice {
                 comp: 'autodryremain',
                 writable: false,
             })
+        }
+
+        if (isPac910604) {
+            // Live command captures from this model:
+            //   0x21F: front display light (1=on)
+            //   0x23E: smart-care wind mode (1=on)
+            this.addConfigSwitchField(config, 0x21f, 'displaylight', 'Display light', 'mdi:lightbulb')
+            this.addConfigSwitchField(config, 0x23e, 'smartcare', 'Smart care', 'mdi:creation')
         }
 
         if (this.getIDUActionRunningTLVNum() != null) {
