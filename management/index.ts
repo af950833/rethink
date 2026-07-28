@@ -119,9 +119,14 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
         app.post(
             '/bridge/:deviceId/enable',
             asyncHandler(async (req, res) => {
+                const deviceId = req.params.deviceId
+                if (Array.isArray(deviceId)) {
+                    res.status(400).end('Invalid deviceId')
+                    return
+                }
                 const deviceType = typeof req.body.deviceType === 'string' ? (req.body.deviceType as string) : undefined
                 try {
-                    if (await bridge.enable(req.params.deviceId, deviceType, statusReport)) res.status(204).end()
+                    if (await bridge.enable(deviceId, deviceType, statusReport)) res.status(204).end()
                     else res.status(400).end()
                 } catch (err) {
                     res.status(500).end(`${err}`)
@@ -132,7 +137,12 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
         app.post(
             '/bridge/:deviceId/disable',
             asyncHandler(async (req, res) => {
-                await bridge.disable(req.params.deviceId)
+                const deviceId = req.params.deviceId
+                if (Array.isArray(deviceId)) {
+                    res.status(400).end('Invalid deviceId')
+                    return
+                }
+                await bridge.disable(deviceId)
                 res.status(204).end()
             }),
         )

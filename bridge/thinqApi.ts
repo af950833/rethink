@@ -95,6 +95,8 @@ type HomeResponse = {
     }[]
 }
 
+export type HomeDevice = HomeResponse['devices'][number]
+
 type OtpResponse = { otp: string; publicKey: string }
 
 export type Environment = {
@@ -185,7 +187,7 @@ export class Client {
         }
     }
 
-    async listDevices() {
+    async listDevices(): Promise<HomeDevice[]> {
         if (!this.homeId) throw new Error('Current home is not set')
 
         const { thinq2Uri } = await this.gateway
@@ -226,7 +228,7 @@ export class Client {
 
     // setting initDevice to true allows the device to be removed from the current account, but it triggers a failure if the device is not currently registered
     // ciphertext is required for Thinq2 devices
-    async addDevice(device: Device, alias: string, deviceType: string, ciphertext?: Buffer) {
+    async addDevice(device: Device, alias: string, deviceType: string, ciphertext?: Buffer, preserveExisting = false) {
         if (!this.homeId) throw new Error('Current home is not set')
 
         const { thinq2Uri } = await this.gateway
@@ -249,6 +251,18 @@ export class Client {
             })
         } catch (err) {
             if (err instanceof RemoteError && err.resultCode === ErrorCodes.ERROR_ALREADY_DEVICES_REGISTERED_IN_HOME) {
+                if (preserveExisting) {
+                    const existing = (await this.listDevices()).some((item) => item.deviceId === device.deviceId)
+                    if (existing) {
+                        console.log(
+                            'Device is already registered in the current home; preserving existing registration',
+                        )
+                        return
+                    }
+                    throw new Error(
+                        `LG reported ${device.deviceId} as already registered, but it is not in the current home; refusing initDevice (${err.message})`,
+                    )
+                }
                 console.log('Device already registered, retrying with initDevice=true')
                 body.initDevice = true
                 await apiFetch(`${thinq2Uri}/service/homes/${this.homeId}/devices`, {

@@ -52,6 +52,34 @@ A simple web interface is available on a user-defined port (default: 44401). The
 - monitoring their communications (with packet injection)
 - configuring the bridge mode
 
+### Preserve an existing ThinQ2 registration
+
+This tree adds two opt-in compatibility settings for router DNAT deployments:
+
+```jsonc
+"sni_certificates": true,
+"bridge": {
+    "storage_path": "./state",
+    "preserve_existing_devices": true
+}
+```
+
+`sni_certificates` selects a cached, CA-signed server certificate from the
+client's TLS SNI name. This is needed when different appliances connect to
+different LG API or MQTT hostnames. The CA key must remain private; generated
+leaf keys exist only in a restricted temporary directory and are removed after
+their TLS context is created.
+
+`preserve_existing_devices` is supported only for ThinQ2. It skips the
+destructive `removeDevice` call. If LG reports that a device is already
+registered, rethink accepts that result only after confirming the same device ID
+is present in the current LG Home. It never retries that case with
+`initDevice: true`.
+
+This mode preserves the LG app registration, but it does not make bridge
+rollback automatic. Disable the bridge before removing router DNAT rules to
+avoid two MQTT clients using the same device ID.
+
 ## Code
 
 The following code is currently available:

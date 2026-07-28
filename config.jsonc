@@ -11,6 +11,8 @@
 
   "ca_key_file": "ca.key", // will be created on first run if necessary
   "ca_cert_file": "ca.cert", // will be created on first run if necessary
+  // Generate a CA-signed leaf certificate for every TLS SNI hostname.
+  "sni_certificates": true,
 
   // If port forwarding or other redirection is involved, the bind port may not match
   // the port that the device will connect to from the outside.
@@ -34,7 +36,9 @@
   "management_port": 44401,
 
   "bridge": {
-    "storage_path": "./state"
+    "storage_path": "./state",
+    // Keep existing ThinQ2 registration, aliases, LG app and Google Home links.
+    "preserve_existing_devices": true
   },
 
   "log": ["status", "incoming", "HTTPS", "publish", "MGMT"]

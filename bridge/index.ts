@@ -16,6 +16,9 @@ import { Device as T2Downstream } from '@/cloud/thinq2/device'
 import { TypedEmitter } from 'tiny-typed-emitter'
 
 type StatusCallback = (status: string) => void
+type BridgeOptions = {
+    preserveExistingDevices?: boolean
+}
 
 const RECONNECT_PERIOD = 5000
 
@@ -103,6 +106,7 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
     constructor(
         readonly state: BridgeState,
         readonly manager: DeviceManager,
+        readonly options: BridgeOptions = {},
     ) {
         super()
         this.manager.on('newDevice', this.#start.bind(this))
@@ -207,8 +211,17 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
         const client = new ThinqClient(creds.env)
         await client.auth(creds.refreshToken)
 
-        statusCallback('Removing device from home')
-        await client.removeDevice(device.id)
+        let existingDevice
+        if (this.options.preserveExistingDevices) {
+            if (device.platform !== 'thinq2') {
+                throw new Error('Preserving an existing LG registration is supported only for ThinQ2 devices')
+            }
+            statusCallback('Checking existing device registration')
+            existingDevice = (await client.listDevices()).find((item) => item.deviceId === device.id)
+        } else {
+            statusCallback('Removing device from home')
+            await client.removeDevice(device.id)
+        }
 
         let clientDevice: Thinq1Device | Thinq2Device
 
@@ -239,8 +252,18 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
                 throw err
             }
 
-            statusCallback('Adding device to home')
-            await client.addDevice(clientDevice, `Rethink ${device.id.substring(0, 8)}`, deviceType, ciphertext)
+            if (existingDevice) {
+                statusCallback(`Preserving existing device registration (${existingDevice.alias})`)
+            } else {
+                statusCallback('Adding device to home')
+                await client.addDevice(
+                    clientDevice,
+                    `Rethink ${device.id.substring(0, 8)}`,
+                    deviceType,
+                    ciphertext,
+                    this.options.preserveExistingDevices,
+                )
+            }
         } else {
             throw new Error('Unknown device platform')
         }
