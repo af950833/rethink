@@ -2,7 +2,7 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import DUT from '@/cloud/devices/Hd0C_F'
 import type { Metadata } from '@/cloud/thinq'
-import { MockHAConnection, MockThinq2Device, buf } from '@/tests/helpers/mocks'
+import { MockHAConnection, MockThinq2Device, buf, hex } from '@/tests/helpers/mocks'
 
 const META: Metadata = { modelId: 'Hd0C_F', modelName: 'Hd0C_F', swVersion: '2.10.93' }
 const LIVE_RINSING = buf('aa2120eb001906003201040100010501020000000800000000060002036600fabb')
@@ -13,8 +13,8 @@ const LIVE_FULL_STATUS = buf(
 function makeDevice() {
     const ha = new MockHAConnection()
     const thinq = new MockThinq2Device('washer-id', META)
-    new DUT(ha.asConnection(), thinq, META)
-    return { ha, thinq }
+    const dev = new DUT(ha.asConnection(), thinq, META)
+    return { ha, thinq, dev }
 }
 
 describe('Hd0C_F', () => {
@@ -39,8 +39,39 @@ describe('Hd0C_F', () => {
             'error_message',
             'door_lock',
             'run_completed',
+            'remote_start_enabled',
+            'remote_start',
+            'pause',
+            'power_off',
         ])
             assert.ok(components[name], `${name} component`)
+    })
+
+    test('publishes Remote Start state and sends only validated controls', () => {
+        const { ha, thinq, dev } = makeDevice()
+        const REMOTE_READY = buf('aa2120eb00190100000000010007020102000000c81000000000000603660084bb')
+        thinq.emit('data', REMOTE_READY)
+        assert.equal(ha.devices['washer-id'].properties.remote_start_enabled, 'ON')
+
+        thinq.resetRecorder()
+        dev.setProperty('remote_start', 'PRESS')
+        assert.equal(hex(thinq.outbox[0]), 'AA15F026010702010200060300000000D010009EBB')
+
+        thinq.resetRecorder()
+        dev.setProperty('pause', 'PRESS')
+        assert.equal(hex(thinq.outbox[0]), 'AA09F02404010099BB')
+
+        thinq.resetRecorder()
+        dev.setProperty('power_off', 'PRESS')
+        assert.equal(hex(thinq.outbox[0]), 'AA09F0240101009CBB')
+    })
+
+    test('blocks Remote Start when the physical Remote Start mode is off', () => {
+        const { thinq, dev } = makeDevice()
+        thinq.emit('data', LIVE_RINSING)
+        thinq.resetRecorder()
+        dev.setProperty('remote_start', 'PRESS')
+        assert.equal(thinq.outbox.length, 0)
     })
 
     test('decodes a live Korean normal-course rinse response', () => {

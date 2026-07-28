@@ -93,6 +93,13 @@ const ERROR: Record<number, string> = {
     0x08: '모터 오류 (LE)',
 }
 
+// Commands captured from this washer while its physical Remote Start mode was
+// enabled. Remote start includes the complete selected programme, so only the
+// captured Normal-course layout is exposed until other courses are validated.
+const REMOTE_START_NORMAL = Buffer.from('f026010702010200060300000000d01000', 'hex')
+const PAUSE = Buffer.from('f024040100', 'hex')
+const POWER_OFF = Buffer.from('f024010100', 'hex')
+
 function sensor(name: string, icon: string) {
     return {
         platform: 'sensor',
@@ -171,10 +178,42 @@ export default class Device extends AABBDevice {
                         name: 'Run completed',
                         icon: 'mdi:check-circle-outline',
                     },
+                    remote_start_enabled: {
+                        platform: 'binary_sensor',
+                        unique_id: '$deviceid-remote_start_enabled',
+                        state_topic: '$this/remote_start_enabled',
+                        name: 'Remote start enabled',
+                        icon: 'mdi:remote',
+                    },
+                    remote_start: {
+                        platform: 'button',
+                        unique_id: '$deviceid-remote_start',
+                        command_topic: '$this/remote_start/set',
+                        name: 'Remote start',
+                        icon: 'mdi:play-circle-outline',
+                    },
+                    pause: {
+                        platform: 'button',
+                        unique_id: '$deviceid-pause',
+                        command_topic: '$this/pause/set',
+                        name: 'Pause',
+                        icon: 'mdi:pause-circle-outline',
+                    },
+                    power_off: {
+                        platform: 'button',
+                        unique_id: '$deviceid-power_off',
+                        command_topic: '$this/power_off/set',
+                        name: 'Power off',
+                        icon: 'mdi:power',
+                    },
                 },
             }),
         )
     }
+
+    private phase = 0
+    private course = 0
+    private remoteStartEnabled = false
 
     private processRecord(rec: Buffer) {
         if (rec.length !== 27 || rec[1] !== 0x19) return
@@ -182,6 +221,10 @@ export default class Device extends AABBDevice {
         const phase = rec[2]
         const isOff = phase === 0
         const error = rec[22]
+        this.phase = phase
+        this.course = rec[7]
+        // Live comparison: physical Remote Start OFF=0x80, ON=0x10.
+        this.remoteStartEnabled = rec[17] === 0x10
 
         this.publishProperty('power', isOff ? 'OFF' : 'ON')
         this.publishProperty('status', STATUS[phase] ?? `알 수 없음 (${phase})`)
@@ -201,6 +244,7 @@ export default class Device extends AABBDevice {
         // Hd0C_F sets bit 3 while the lid is locked during a running cycle.
         this.publishProperty('door_lock', (rec[16] & 0x08) !== 0 ? 'ON' : 'OFF')
         this.publishProperty('run_completed', phase === 0x08 ? 'ON' : 'OFF')
+        this.publishProperty('remote_start_enabled', this.remoteStartEnabled ? 'ON' : 'OFF')
     }
 
     processAABB(buf: Buffer) {
@@ -212,5 +256,23 @@ export default class Device extends AABBDevice {
         // is TCLCount (washes since the last tub-clean cycle); live value 0x17
         // matched the ThinQ2 snapshot's TCLCount=23 exactly.
         else if (buf[1] === 0xcf && buf.length === 50) this.publishProperty('tub_clean_count', buf[29])
+    }
+
+    setProperty(prop: string, mqttValue: string) {
+        if (mqttValue !== 'PRESS') return
+
+        if (prop === 'remote_start') {
+            if (!this.remoteStartEnabled || this.phase !== 0x01 || this.course !== 0x01) {
+                console.warn('Ignoring washer remote start: Remote Start and the Normal course must be selected')
+                return
+            }
+            this.send(REMOTE_START_NORMAL)
+        } else if (prop === 'pause') {
+            if (this.phase === 0 || this.phase === 0x02) return
+            this.send(PAUSE)
+        } else if (prop === 'power_off') {
+            if (this.phase === 0) return
+            this.send(POWER_OFF)
+        }
     }
 }
