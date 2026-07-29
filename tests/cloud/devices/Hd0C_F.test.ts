@@ -10,6 +10,11 @@ const LIVE_POWER_OFF = buf('aa2120eb00190001100110010007020102000000800000000002
 const LIVE_FULL_STATUS = buf(
     'aa0020cf002e0101070600230104010200020103050101000080000000006617023a0f4604330200000100000000001c00000000a7bb',
 )
+// Power button pressed with no course selected. The first 0xEC record is the
+// older powered-off state and the second record is the newest Initial state.
+const LIVE_POWER_ON_INITIAL = buf(
+    'AA3C20EC00190001100110010007020102000000800000000001000603660000190100000000010007020102000000C08000000000000603660055BB',
+)
 
 function makeDevice() {
     const ha = new MockHAConnection()
@@ -107,6 +112,17 @@ describe('Hd0C_F', () => {
         assert.equal(p.error_message, '-')
         assert.equal(p.door_lock, 'ON')
         assert.equal(p.run_completed, 'OFF')
+    })
+
+    test('uses the second 0xEC record as the newest state', () => {
+        const { ha, thinq } = makeDevice()
+        thinq.emit('data', LIVE_POWER_ON_INITIAL)
+        const p = ha.devices['washer-id'].properties
+
+        assert.equal(p.power, 'ON')
+        assert.equal(p.status, '초기 설정')
+        assert.equal(p.previous_status, '꺼짐')
+        assert.equal(p.course, '표준')
     })
 
     test('decodes the live full-status TCLCount value', () => {

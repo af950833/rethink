@@ -7,8 +7,8 @@ import AABBDevice from './aabb_device'
 
 // Korean top-loading washer (Hd0C_F).
 //
-// AA/BB 0xEB contains one 27-byte record. 0xEC contains the current record
-// followed by the previous record. The offsets below were checked against a
+// AA/BB 0xEB contains one 27-byte record. 0xEC contains two chronological
+// records, with the newest state in the second record. The offsets below were checked against a
 // live Hd0C_F response and the same appliance's ThinQ2 washerDryer snapshot.
 const STATUS: Record<number, string> = {
     0x00: '꺼짐',
@@ -247,7 +247,7 @@ export default class Device extends AABBDevice {
         if (buf[0] !== 0x20) return
 
         if (buf[1] === 0xeb && buf.length === 29) this.processRecord(buf.subarray(2, 29))
-        else if (buf[1] === 0xec && buf.length === 56) this.processRecord(buf.subarray(2, 29))
+        else if (buf[1] === 0xec && buf.length === 56) this.processRecord(buf.subarray(29, 56))
         // Full status sent once after the appliance reconnects. Hd0C_F byte 29
         // is TCLCount (washes since the last tub-clean cycle); live value 0x17
         // matched the ThinQ2 snapshot's TCLCount=23 exactly.
