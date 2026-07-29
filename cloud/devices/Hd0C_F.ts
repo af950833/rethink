@@ -110,6 +110,14 @@ function sensor(name: string, icon: string) {
     }
 }
 
+function formatTime(hours: number, minutes: number) {
+    const totalSeconds = Math.max(0, hours * 3600 + minutes * 60)
+    const displayHours = Math.floor(totalSeconds / 3600)
+    const displayMinutes = Math.floor((totalSeconds % 3600) / 60)
+    const displaySeconds = totalSeconds % 60
+    return `${displayHours}:${String(displayMinutes).padStart(2, '0')}:${String(displaySeconds).padStart(2, '0')}`
+}
+
 export default class Device extends AABBDevice {
     constructor(HA: Connection, thinq: Thinq2Device, meta: Metadata) {
         super(HA, thinq)
@@ -131,21 +139,9 @@ export default class Device extends AABBDevice {
                     },
                     previous_status: sensor('previous_status', 'mdi:history'),
                     course: sensor('course', 'mdi:pin-outline'),
-                    remaining_time: {
-                        ...sensor('remaining_time', 'mdi:timer-outline'),
-                        device_class: 'duration',
-                        unit_of_measurement: 'min',
-                    },
-                    initial_time: {
-                        ...sensor('initial_time', 'mdi:clock-start'),
-                        device_class: 'duration',
-                        unit_of_measurement: 'min',
-                    },
-                    reserve_time: {
-                        ...sensor('reserve_time', 'mdi:clock-outline'),
-                        device_class: 'duration',
-                        unit_of_measurement: 'min',
-                    },
+                    remaining_time: sensor('remaining_time', 'mdi:timer-outline'),
+                    initial_time: sensor('initial_time', 'mdi:clock-start'),
+                    reserve_time: sensor('reserve_time', 'mdi:clock-outline'),
                     wash: sensor('wash', 'mdi:waves'),
                     spin: sensor('spin', 'mdi:rotate-3d'),
                     water_temp: sensor('water_temp', 'mdi:thermometer-lines'),
@@ -230,9 +226,9 @@ export default class Device extends AABBDevice {
         this.publishProperty('status', STATUS[phase] ?? `알 수 없음 (${phase})`)
         this.publishProperty('previous_status', STATUS[rec[21]] ?? `알 수 없음 (${rec[21]})`)
         this.publishProperty('course', isOff ? '-' : (COURSE[rec[7]] ?? `알 수 없음 (${rec[7]})`))
-        this.publishProperty('remaining_time', isOff ? 0 : rec[3] * 60 + rec[4])
-        this.publishProperty('initial_time', isOff ? 0 : rec[5] * 60 + rec[6])
-        this.publishProperty('reserve_time', isOff ? 0 : rec[13] * 60 + rec[14])
+        this.publishProperty('remaining_time', isOff ? '0:00:00' : formatTime(rec[3], rec[4]))
+        this.publishProperty('initial_time', isOff ? '0:00:00' : formatTime(rec[5], rec[6]))
+        this.publishProperty('reserve_time', isOff ? '0:00:00' : formatTime(rec[13], rec[14]))
         this.publishProperty('wash', WASH[rec[9]] ?? `알 수 없음 (${rec[9]})`)
         this.publishProperty('spin', isOff ? '-' : (SPIN[rec[10]] ?? `알 수 없음 (${rec[10]})`))
         this.publishProperty('water_temp', TEMP[rec[11]] ?? `알 수 없음 (${rec[11]})`)

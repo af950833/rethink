@@ -52,6 +52,11 @@ describe('Hd0C_F', () => {
         assert.equal(tubCleanCount.suggested_display_precision, 0)
         assert.equal(tubCleanCount.unit_of_measurement, undefined)
         assert.equal((components.power as Record<string, unknown>).device_class, undefined)
+        for (const name of ['initial_time', 'remaining_time', 'reserve_time']) {
+            const time = components[name] as Record<string, unknown>
+            assert.equal(time.device_class, undefined)
+            assert.equal(time.unit_of_measurement, undefined)
+        }
     })
 
     test('publishes Remote Start state and sends only validated controls', () => {
@@ -90,9 +95,9 @@ describe('Hd0C_F', () => {
         assert.equal(p.status, '헹굼 중')
         assert.equal(p.previous_status, '헹굼 중')
         assert.equal(p.course, '표준')
-        assert.equal(p.remaining_time, 50)
-        assert.equal(p.initial_time, 64)
-        assert.equal(p.reserve_time, 0)
+        assert.equal(p.remaining_time, '0:50:00')
+        assert.equal(p.initial_time, '1:04:00')
+        assert.equal(p.reserve_time, '0:00:00')
         assert.equal(p.wash, '3분')
         assert.equal(p.spin, '맞춤건조')
         assert.equal(p.water_temp, '냉수')
@@ -120,5 +125,8 @@ describe('Hd0C_F', () => {
         assert.equal(p.course, '-')
         assert.equal(p.spin, '-')
         assert.equal(p.water_level, '-')
+        assert.equal(p.remaining_time, '0:00:00')
+        assert.equal(p.initial_time, '0:00:00')
+        assert.equal(p.reserve_time, '0:00:00')
     })
 })
