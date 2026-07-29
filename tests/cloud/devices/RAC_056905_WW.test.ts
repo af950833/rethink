@@ -85,7 +85,19 @@ describe(MODEL_ID, () => {
         ;(dev as unknown as { initMakeSetConfig(): void }).initMakeSetConfig()
 
         const components = ha.devices[DEVICE_ID].config!.components as Record<string, Record<string, unknown>>
-        for (const component of ['energysave', 'autodry', 'displaylight', 'smartcare']) {
+        for (const component of [
+            'energysave',
+            'autodry',
+            'displaylight',
+            'smartcare',
+            'energy_current_hour',
+            'energy_today',
+            'energy_month',
+        ]) {
+            if (component.startsWith('energy_')) {
+                assert.equal(components[component].platform, 'sensor')
+                continue
+            }
             assert.equal(components[component].platform, 'switch')
         }
         assert.equal(components.energysave.optimistic, undefined)
@@ -102,6 +114,36 @@ describe(MODEL_ID, () => {
             const packet = thinq.outbox[0]
             assert.deepEqual(TLV.parse(packet.subarray(11, packet.length - 2)), [{ t: expectedTag, l: 0, v: 1 }])
         }
+
+        dev.drop()
+    })
+
+    test('PAC_910604_WW accumulates B115 interval energy without counting immediate retransmissions', () => {
+        const ha = new MockHAConnection()
+        const meta: Metadata = { modelId: 'PAC_910604_WW', modelName: 'PAC_910604_WW', swVersion: '640903' }
+        const thinq = new MockThinq2Device(DEVICE_ID, meta)
+        const dev = new DUT(ha.asConnection(), thinq, meta)
+
+        const report = (wh: number, seconds: number) => {
+            const packet = Buffer.alloc(20)
+            packet[6] = 0x87
+            packet[7] = 0xfd
+            packet[8] = 0x03
+            packet[10] = 0xb1
+            packet[11] = 0x15
+            packet.writeUInt32LE(wh, 12)
+            packet.writeUInt32LE(seconds, 16)
+            dev.processData(packet)
+        }
+
+        report(123, 910)
+        report(123, 910)
+        report(142, 900)
+
+        const properties = ha.devices[DEVICE_ID].properties
+        assert.equal(properties.energy_current_hour, 265)
+        assert.equal(properties.energy_today, 265)
+        assert.equal(properties.energy_month, 0.265)
 
         dev.drop()
     })

@@ -7,9 +7,56 @@ import * as TLV from '@/util/tlv'
 import { racAirTemp, racPipeTemp } from '@/util/ac_tables'
 import log from '@/util/logging'
 import HADevice from './base'
+import { dirname, join, resolve } from 'node:path'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 type PowerModeChangeHook = () => void
 type CheckMode = (arg: number) => boolean
+
+type EnergyStats = {
+    hour: string
+    date: string
+    month: string
+    hourWh: number
+    dayWh: number
+    monthWh: number
+    lastReportSignature?: string
+    lastReportAt?: number
+}
+
+function localDate(timestamp = Date.now()) {
+    const parts = new Intl.DateTimeFormat('en', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(timestamp)
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+function localHour(timestamp = Date.now()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(timestamp)
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}`
+}
+
+function localMonth(timestamp = Date.now()) {
+    return localDate(timestamp).slice(0, 7)
+}
+
+function dataDirectory() {
+    if (!process.argv[1]?.includes('rethink-cloud')) return
+    return dirname(resolve(process.argv[2] ?? './config.json'))
+}
+
 export default class Device extends TLVDevice {
     meta: Metadata
     initialValuesReceived: boolean = false
@@ -28,10 +75,17 @@ export default class Device extends TLVDevice {
     filterInitialQueryTimeout: ReturnType<typeof setTimeout> | undefined
     filterQueryTimer: ReturnType<typeof setInterval> | undefined
     pacFanOnlyStopTimeout: ReturnType<typeof setTimeout> | undefined
+    energyResetTimer: ReturnType<typeof setInterval> | undefined
+    energyStats: EnergyStats
 
     constructor(HA: Connection, thinq: Thinq2Device, meta: Metadata) {
         super(HA, thinq)
         this.meta = meta
+        this.energyStats = this.loadEnergyStats()
+        if (meta.modelId === 'PAC_910604_WW') {
+            this.energyResetTimer = setInterval(() => this.rollEnergyPeriods(), 60_000)
+            this.energyResetTimer.unref()
+        }
     }
 
     drop() {
@@ -60,7 +114,37 @@ export default class Device extends TLVDevice {
             this.pacFanOnlyStopTimeout = undefined
         }
 
+        if (this.energyResetTimer != undefined) {
+            clearInterval(this.energyResetTimer)
+            this.energyResetTimer = undefined
+        }
+
         super.drop()
+    }
+
+    processData(buf: Buffer) {
+        super.processData(buf)
+
+        // PAC_910604_WW private B115 statistics report:
+        //   uint32 LE interval energy (Wh), uint32 LE interval duration (seconds).
+        // A non-zero report is normally emitted about every 15 minutes, with
+        // zero-filled status reports in between.
+        if (
+            this.meta.modelId === 'PAC_910604_WW' &&
+            buf.length >= 20 &&
+            buf[0] === 0x00 &&
+            buf[6] === 0x87 &&
+            buf[7] === 0xfd &&
+            buf[8] === 0x03 &&
+            buf[10] === 0xb1 &&
+            buf[11] === 0x15
+        ) {
+            const intervalWh = buf.readUInt32LE(12)
+            const intervalSeconds = buf.readUInt32LE(16)
+            if (intervalWh > 0 && intervalSeconds >= 600 && intervalSeconds <= 1200) {
+                this.processEnergyInterval(intervalWh, intervalSeconds)
+            }
+        }
     }
 
     processPrivData(cmd: number, buf9: number, data: Buffer) {
@@ -859,7 +943,45 @@ export default class Device extends TLVDevice {
             })
         }
 
+        if (isPac910604) {
+            const energyCurrentHour = {
+                platform: 'sensor',
+                device_class: 'energy',
+                unique_id: '$deviceid-energy_current_hour',
+                state_topic: '$this/energy_current_hour',
+                name: '현재 시간 누적 사용량',
+                unit_of_measurement: 'Wh',
+                state_class: 'total',
+                icon: 'mdi:lightning-bolt',
+            }
+            const energyToday = {
+                platform: 'sensor',
+                device_class: 'energy',
+                unique_id: '$deviceid-energy_today',
+                state_topic: '$this/energy_today',
+                name: '오늘 누적 사용량',
+                unit_of_measurement: 'Wh',
+                state_class: 'total',
+                icon: 'mdi:calendar-today',
+            }
+            const energyMonth = {
+                platform: 'sensor',
+                device_class: 'energy',
+                unique_id: '$deviceid-energy_month',
+                state_topic: '$this/energy_month',
+                name: '금월 누적 사용량',
+                unit_of_measurement: 'kWh',
+                state_class: 'total',
+                suggested_display_precision: 3,
+                icon: 'mdi:calendar-month',
+            }
+            config['components']['energy_current_hour'] = energyCurrentHour
+            config['components']['energy_today'] = energyToday
+            config['components']['energy_month'] = energyMonth
+        }
+
         this.setConfig(config)
+        if (isPac910604) this.publishEnergyStats()
 
         if (this.filterLifeTime) {
             this.publishFilterData()
@@ -878,6 +1000,94 @@ export default class Device extends TLVDevice {
         }
 
         this.query()
+    }
+
+    private energyStatsPath() {
+        const dir = dataDirectory()
+        return dir ? join(dir, `air-conditioner-energy-${this.id}.json`) : undefined
+    }
+
+    private loadEnergyStats(now = Date.now()): EnergyStats {
+        const current = { hour: localHour(now), date: localDate(now), month: localMonth(now) }
+        const empty: EnergyStats = { ...current, hourWh: 0, dayWh: 0, monthWh: 0 }
+        const path = this.energyStatsPath()
+        if (!path) return empty
+        try {
+            const saved = JSON.parse(readFileSync(path, 'utf-8')) as EnergyStats
+            return {
+                ...current,
+                hourWh: saved.hour === current.hour ? Number(saved.hourWh) || 0 : 0,
+                dayWh: saved.date === current.date ? Number(saved.dayWh) || 0 : 0,
+                monthWh: saved.month === current.month ? Number(saved.monthWh) || 0 : 0,
+                ...(saved.lastReportSignature ? { lastReportSignature: saved.lastReportSignature } : {}),
+                ...(Number.isFinite(saved.lastReportAt) ? { lastReportAt: Number(saved.lastReportAt) } : {}),
+            }
+        } catch {
+            return empty
+        }
+    }
+
+    private saveEnergyStats() {
+        const path = this.energyStatsPath()
+        if (!path) return
+        const temporary = `${path}.tmp`
+        try {
+            writeFileSync(temporary, JSON.stringify(this.energyStats))
+            renameSync(temporary, path)
+        } catch (err) {
+            console.warn(`Unable to save air conditioner energy statistics: ${err}`)
+        }
+    }
+
+    private publishEnergyStats() {
+        this.HA.publishProperty(this.id, 'energy_current_hour', this.energyStats.hourWh)
+        this.HA.publishProperty(this.id, 'energy_today', this.energyStats.dayWh)
+        this.HA.publishProperty(this.id, 'energy_month', Number((this.energyStats.monthWh / 1000).toFixed(3)))
+    }
+
+    private processEnergyInterval(intervalWh: number, intervalSeconds: number, now = Date.now()) {
+        this.rollEnergyPeriods(now)
+        const signature = `${intervalWh}:${intervalSeconds}`
+        if (
+            this.energyStats.lastReportSignature === signature &&
+            this.energyStats.lastReportAt != null &&
+            now - this.energyStats.lastReportAt < 2 * 60_000
+        )
+            return
+
+        this.energyStats.lastReportSignature = signature
+        this.energyStats.lastReportAt = now
+        this.energyStats.hourWh += intervalWh
+        this.energyStats.dayWh += intervalWh
+        this.energyStats.monthWh += intervalWh
+        this.publishEnergyStats()
+        this.saveEnergyStats()
+    }
+
+    private rollEnergyPeriods(now = Date.now()) {
+        const hour = localHour(now)
+        const date = localDate(now)
+        const month = localMonth(now)
+        let changed = false
+        if (this.energyStats.month !== month) {
+            this.energyStats.month = month
+            this.energyStats.monthWh = 0
+            changed = true
+        }
+        if (this.energyStats.date !== date) {
+            this.energyStats.date = date
+            this.energyStats.dayWh = 0
+            changed = true
+        }
+        if (this.energyStats.hour !== hour) {
+            this.energyStats.hour = hour
+            this.energyStats.hourWh = 0
+            changed = true
+        }
+        if (changed) {
+            this.publishEnergyStats()
+            this.saveEnergyStats()
+        }
     }
 
     addTimerField(config: DeviceDiscovery, id: number, name: string, desc: string, icon: string, max: number) {
