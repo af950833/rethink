@@ -2,9 +2,11 @@ import * as mqtt from 'mqtt'
 import { Thinq2Device } from './thinqApi'
 import { TypedEmitter } from 'tiny-typed-emitter'
 import log from '@/util/logging'
+import type { ClipMessage } from '@/cloud/thinq2/clip'
 
 type ConnectionEvents = {
     data: (buffer: Buffer) => void
+    message: (payload: ClipMessage) => void
     close: () => void
     error: (error: Error) => void
 }
@@ -45,9 +47,10 @@ export class Connection extends TypedEmitter<ConnectionEvents> {
                         this.publishToCloud(this.device.state!.pubTopic, message)
                     }
 
-                    if (payload.cmd === 'packet') {
+                    if (payload.cmd === 'packet' || payload.cmd === 'ack') {
                         log('bridge', `${this.device.deviceId} <- ${payload.data}`)
-                        this.emit('data', Buffer.from(payload.data, 'hex'))
+                        this.emit('message', payload)
+                        if (payload.cmd === 'packet') this.emit('data', Buffer.from(payload.data, 'hex'))
                     }
                 }
             } catch (err) {

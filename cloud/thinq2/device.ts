@@ -54,6 +54,22 @@ export class Device extends TypedEmitter<DeviceEvents> {
         this.emit('sendData', buf)
         this.send('packet', 1, buf.toString('hex'))
     }
+
+    forward_message(payload: ClipMessage) {
+        if (typeof payload.data === 'string' && (payload.cmd === 'packet' || payload.cmd === 'ack')) {
+            this.emit('sendData', Buffer.from(payload.data, 'hex'))
+        }
+
+        const packet = {
+            topic: this.topic,
+            retain: false,
+            qos: 0 as const,
+            dup: false,
+            payload: JSON.stringify(payload),
+        }
+        traceMqtt('rethink->device', packet)
+        this.broker.publish(packet, null)
+    }
 }
 
 function trimNull(buf: Buffer) {

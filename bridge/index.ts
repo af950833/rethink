@@ -53,21 +53,24 @@ class BridgedDevice {
         const U = this.upstream
         const D = this.downstream
         if (U instanceof Thinq1Device && D instanceof T1Downstream) {
-            this.connection = new Thinq1Connection(U)
+            const connection = new Thinq1Connection(U)
+            this.connection = connection
             // feed the initial state to the connection
-            if (D.lastReport) this.connection.send(D.lastReport)
+            if (D.lastReport) connection.send(D.lastReport)
 
-            this.connection.on('data', (payload) => D.send(payload))
+            connection.on('data', (payload) => D.send(payload))
+            connection.on('close', () => this.disconnect())
+            connection.on('error', console.log)
         } else if (U instanceof Thinq2Device && D instanceof T2Downstream) {
-            this.connection = new Thinq2Connection(U)
-            this.connection.on('data', (payload) => D.send_packet(payload))
+            const connection = new Thinq2Connection(U)
+            this.connection = connection
+            connection.on('message', (payload) => D.forward_message(payload))
+            connection.on('close', () => this.disconnect())
+            connection.on('error', console.log)
         } else {
             console.warn("Can't connect bridge")
             return
         }
-
-        this.connection.on('close', () => this.disconnect())
-        this.connection.on('error', console.log)
     }
 
     reconnectTimeout: NodeJS.Timeout | undefined
