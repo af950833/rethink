@@ -123,7 +123,6 @@ export default class Device extends AABBDevice {
                         state_topic: '$this/power',
                         name: 'Power',
                         icon: 'mdi:washing-machine',
-                        device_class: 'running',
                     },
                     status: {
                         ...sensor('status', 'mdi:state-machine'),

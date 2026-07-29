@@ -51,6 +51,7 @@ describe('Hd0C_F', () => {
         assert.equal(tubCleanCount.state_class, 'total')
         assert.equal(tubCleanCount.suggested_display_precision, 0)
         assert.equal(tubCleanCount.unit_of_measurement, undefined)
+        assert.equal((components.power as Record<string, unknown>).device_class, undefined)
     })
 
     test('publishes Remote Start state and sends only validated controls', () => {
