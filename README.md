@@ -234,6 +234,8 @@ docker build --pull -t rethink-lg-bridge:local .
 docker run -d \
   --name rethink \
   --restart unless-stopped \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   --network host \
   -v "$HOME/docker/rethink-data:/app/data" \
   rethink-lg-bridge:local
@@ -435,6 +437,8 @@ docker rm rethink
 docker run -d \
   --name rethink \
   --restart unless-stopped \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   --network host \
   -v "$HOME/docker/rethink-data:/app/data" \
   rethink-lg-bridge:local
