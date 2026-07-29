@@ -28,12 +28,14 @@ type EnergyStats = {
 }
 
 function localDate(timestamp = Date.now()) {
-    return new Intl.DateTimeFormat('en-CA', {
+    const parts = new Intl.DateTimeFormat('en', {
         timeZone: 'Asia/Seoul',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
-    }).format(timestamp)
+    }).formatToParts(timestamp)
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}`
 }
 
 function localHour(timestamp = Date.now()) {
@@ -228,7 +230,7 @@ export default class Device extends AABBDevice {
             this.processStatus(buf.subarray(2))
         } else if (buf[1] === 0xec && buf.length === 2 + STATUS_LENGTH * 2) {
             this.processStatus(buf.subarray(2 + STATUS_LENGTH))
-        } else if (buf[1] === 0xaf && buf.length === 5 && buf[2] === 0x0f) {
+        } else if (buf[1] === 0xaf && buf.length === 5 && (buf[2] === 0x0f || buf[2] === 0x10)) {
             this.processEnergyInterval(buf.readUInt16BE(3))
         }
     }

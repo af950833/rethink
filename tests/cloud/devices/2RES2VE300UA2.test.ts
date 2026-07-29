@@ -101,6 +101,16 @@ describe('2RES2VE300UA2', () => {
         assert.equal(ha.devices[DEVICE_ID].properties.energy_month, 0.033)
     })
 
+    test('accepts the captured 10AF subtype 10 interval report', () => {
+        const { ha, thinq } = makeDevice()
+
+        thinq.emit('data', buf('AA0910AF10005A89BB'))
+
+        assert.equal(ha.devices[DEVICE_ID].properties.energy_current_hour, 90)
+        assert.equal(ha.devices[DEVICE_ID].properties.energy_today, 90)
+        assert.equal(ha.devices[DEVICE_ID].properties.energy_month, 0.09)
+    })
+
     test('resets hour, day and month totals on Korea-time boundaries', () => {
         const { ha, dev } = makeDevice()
         const processEnergy = (
