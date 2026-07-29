@@ -229,10 +229,10 @@ export default class Device extends AABBDevice {
         this.publishProperty('remaining_time', isOff ? '0:00:00' : formatTime(rec[3], rec[4]))
         this.publishProperty('initial_time', isOff ? '0:00:00' : formatTime(rec[5], rec[6]))
         this.publishProperty('reserve_time', isOff ? '0:00:00' : formatTime(rec[13], rec[14]))
-        this.publishProperty('wash', WASH[rec[9]] ?? `알 수 없음 (${rec[9]})`)
+        this.publishProperty('wash', isOff ? '-' : (WASH[rec[9]] ?? `알 수 없음 (${rec[9]})`))
         this.publishProperty('spin', isOff ? '-' : (SPIN[rec[10]] ?? `알 수 없음 (${rec[10]})`))
-        this.publishProperty('water_temp', TEMP[rec[11]] ?? `알 수 없음 (${rec[11]})`)
-        this.publishProperty('rinse', RINSE[rec[12]] ?? `알 수 없음 (${rec[12]})`)
+        this.publishProperty('water_temp', isOff ? '-' : (TEMP[rec[11]] ?? `알 수 없음 (${rec[11]})`))
+        this.publishProperty('rinse', isOff ? '-' : (RINSE[rec[12]] ?? `알 수 없음 (${rec[12]})`))
         // The protocol uses zero-based water-level values.
         this.publishProperty('water_level', isOff ? '-' : rec[23] + 1)
         this.publishProperty('error', error === 0 ? 'OFF' : 'ON')
