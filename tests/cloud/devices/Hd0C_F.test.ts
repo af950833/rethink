@@ -46,6 +46,11 @@ describe('Hd0C_F', () => {
             'power_off',
         ])
             assert.ok(components[name], `${name} component`)
+
+        const tubCleanCount = components.tub_clean_count as Record<string, unknown>
+        assert.equal(tubCleanCount.state_class, 'total')
+        assert.equal(tubCleanCount.suggested_display_precision, 0)
+        assert.equal(tubCleanCount.unit_of_measurement, undefined)
     })
 
     test('publishes Remote Start state and sends only validated controls', () => {

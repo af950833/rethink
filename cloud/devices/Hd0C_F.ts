@@ -154,7 +154,8 @@ export default class Device extends AABBDevice {
                     water_level: sensor('water_level', 'mdi:water'),
                     tub_clean_count: {
                         ...sensor('tub_clean_count', 'mdi:washing-machine'),
-                        state_class: 'measurement',
+                        state_class: 'total',
+                        suggested_display_precision: 0,
                     },
                     error: {
                         platform: 'binary_sensor',
