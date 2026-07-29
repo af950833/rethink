@@ -7,9 +7,56 @@ import * as TLV from '@/util/tlv'
 import { racAirTemp, racPipeTemp } from '@/util/ac_tables'
 import log from '@/util/logging'
 import HADevice from './base'
+import { dirname, join, resolve } from 'node:path'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 type PowerModeChangeHook = () => void
 type CheckMode = (arg: number) => boolean
+
+type EnergyStats = {
+    hour: string
+    date: string
+    month: string
+    hourWh: number
+    dayWh: number
+    monthWh: number
+    lastReportSignature?: string
+    lastReportAt?: number
+}
+
+function localDate(timestamp = Date.now()) {
+    const parts = new Intl.DateTimeFormat('en', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(timestamp)
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+function localHour(timestamp = Date.now()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(timestamp)
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}`
+}
+
+function localMonth(timestamp = Date.now()) {
+    return localDate(timestamp).slice(0, 7)
+}
+
+function dataDirectory() {
+    if (!process.argv[1]?.includes('rethink-cloud')) return
+    return dirname(resolve(process.argv[2] ?? './config.json'))
+}
+
 export default class Device extends TLVDevice {
     meta: Metadata
     initialValuesReceived: boolean = false
@@ -27,10 +74,18 @@ export default class Device extends TLVDevice {
     filterChangedDate: number = 0
     filterInitialQueryTimeout: ReturnType<typeof setTimeout> | undefined
     filterQueryTimer: ReturnType<typeof setInterval> | undefined
+    pacFanOnlyStopTimeout: ReturnType<typeof setTimeout> | undefined
+    energyResetTimer: ReturnType<typeof setInterval> | undefined
+    energyStats: EnergyStats
 
     constructor(HA: Connection, thinq: Thinq2Device, meta: Metadata) {
         super(HA, thinq)
         this.meta = meta
+        this.energyStats = this.loadEnergyStats()
+        if (meta.modelId === 'PAC_910604_WW') {
+            this.energyResetTimer = setInterval(() => this.rollEnergyPeriods(), 60_000)
+            this.energyResetTimer.unref()
+        }
     }
 
     drop() {
@@ -54,7 +109,42 @@ export default class Device extends TLVDevice {
             this.filterQueryTimer = undefined
         }
 
+        if (this.pacFanOnlyStopTimeout != undefined) {
+            clearTimeout(this.pacFanOnlyStopTimeout)
+            this.pacFanOnlyStopTimeout = undefined
+        }
+
+        if (this.energyResetTimer != undefined) {
+            clearInterval(this.energyResetTimer)
+            this.energyResetTimer = undefined
+        }
+
         super.drop()
+    }
+
+    processData(buf: Buffer) {
+        super.processData(buf)
+
+        // PAC_910604_WW private B115 statistics report:
+        //   uint32 LE interval energy (Wh), uint32 LE interval duration (seconds).
+        // A non-zero report is normally emitted about every 15 minutes, with
+        // zero-filled status reports in between.
+        if (
+            this.meta.modelId === 'PAC_910604_WW' &&
+            buf.length >= 20 &&
+            buf[0] === 0x00 &&
+            buf[6] === 0x87 &&
+            buf[7] === 0xfd &&
+            buf[8] === 0x03 &&
+            buf[10] === 0xb1 &&
+            buf[11] === 0x15
+        ) {
+            const intervalWh = buf.readUInt32LE(12)
+            const intervalSeconds = buf.readUInt32LE(16)
+            if (intervalWh > 0 && intervalSeconds >= 600 && intervalSeconds <= 1200) {
+                this.processEnergyInterval(intervalWh, intervalSeconds)
+            }
+        }
     }
 
     processPrivData(cmd: number, buf9: number, data: Buffer) {
@@ -186,7 +276,10 @@ export default class Device extends TLVDevice {
             iduRunning = this.raw_clip_state[iduRunningTLVNum] !== 0
         }
 
-        const modes2ha = ['cooling', 'drying', 'fan', undefined, 'heating']
+        const modes2ha =
+            this.meta.modelId === 'PAC_910604_WW'
+                ? ['cooling', 'drying', undefined, undefined, undefined, 'fan']
+                : ['cooling', 'drying', 'fan', undefined, 'heating']
         let action: string | undefined = undefined
         let increaseQueryInterval = false
         if (this.getPowerTLV() === 0) {
@@ -259,6 +352,7 @@ export default class Device extends TLVDevice {
     }
 
     initMakeSetConfig() {
+        const isPac910604 = this.meta.modelId === 'PAC_910604_WW'
         const config: DeviceDiscovery & { components: { climate: ClimateComponent } } = allowExtendedType({
             ...HADevice.config(this.meta, { name: 'LG Air Conditioner' }),
             components: {
@@ -274,8 +368,11 @@ export default class Device extends TLVDevice {
                     /* TODO: some devices report these temp ranges via tags 0x2e1 - 0x2ec */
                     min_temp: 18,
                     max_temp: 30,
+                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
                     /* TODO: get from 0x2c2 */
-                    fan_modes: ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
+                    fan_modes: isPac910604
+                        ? ['약풍', '중풍', '강풍', '롱파워', '쿨파워']
+                        : ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
                     /* TODO: get allowed op modes from 0x2c1 */
                 } satisfies ClimateComponent,
             },
@@ -289,6 +386,15 @@ export default class Device extends TLVDevice {
             writable: false,
             read_xform: (raw) => raw / 2,
         })
+        if (isPac910604) {
+            this.addField(config, {
+                id: 0x336,
+                name: 'current_humidity',
+                comp: 'climate',
+                state_topic: 'topic',
+                writable: false,
+            })
+        }
         this.addField(config, {
             id: 0x1f7,
             name: 'power',
@@ -315,6 +421,11 @@ export default class Device extends TLVDevice {
             name: 'mode',
             comp: 'climate',
             read_xform: (raw) => {
+                if (isPac910604) {
+                    const pacModes: Record<number, string> = { 0: 'cool', 1: 'dry', 5: 'fan_only' }
+                    if (this.getPowerTLV() === 0) return 'off'
+                    return pacModes[raw]
+                }
                 const modes2ha = ['cool', 'dry', 'fan_only', undefined, 'heat', undefined, 'auto']
                 if (this.getPowerTLV() === 0) return 'off'
                 return modes2ha[raw]
@@ -326,13 +437,25 @@ export default class Device extends TLVDevice {
                 return true
             },
             write_xform: (val) => {
-                const modes2clip: Record<string, number> = { cool: 0, dry: 1, fan_only: 2, heat: 4, auto: 6 }
+                const modes2clip: Record<string, number> = isPac910604
+                    ? { cool: 0, dry: 1, fan_only: 5 }
+                    : { cool: 0, dry: 1, fan_only: 2, heat: 4, auto: 6 }
                 if (val === 'off') {
                     // Call function power (0x1f7) with value OFF
                     this.setProperty('climate-power', 'OFF')
                     return null
                 }
                 return modes2clip[val]
+            },
+            write_callback: (raw) => {
+                if (isPac910604 && this.getModeTLV() === 5 && (raw === 0 || raw === 1)) {
+                    if (this.pacFanOnlyStopTimeout != undefined) clearTimeout(this.pacFanOnlyStopTimeout)
+                    this.pacFanOnlyStopTimeout = setTimeout(() => {
+                        this.pacFanOnlyStopTimeout = undefined
+                        this.send([1, 1, 2, 1, 0], [{ t: 0x20f, v: 0 }])
+                    }, 1400)
+                }
+                return true
             },
             write_attach: [0x1fa, 0x1fe],
         })
@@ -342,6 +465,15 @@ export default class Device extends TLVDevice {
             name: 'fan_mode',
             comp: 'climate',
             read_xform: (raw) => {
+                if (isPac910604) {
+                    const pacModes: Record<number, string> = {
+                        0x0202: '약풍',
+                        0x0404: '중풍',
+                        0x0606: '강풍',
+                        0x0909: '롱파워',
+                    }
+                    return pacModes[raw]
+                }
                 const modes2ha = [
                     undefined,
                     undefined,
@@ -352,10 +484,31 @@ export default class Device extends TLVDevice {
                     'very high',
                     undefined,
                     'auto',
+                    'long power',
                 ]
                 return modes2ha[raw]
             },
             write_xform: (val) => {
+                if (isPac910604) {
+                    if (val === '쿨파워') {
+                        if (!this.jetMode) {
+                            this.setProperty('coolpower-', 'ON')
+                            this.jetMode = true
+                        }
+                        return null
+                    }
+                    if (this.jetMode) {
+                        this.setProperty('coolpower-', 'OFF')
+                        this.jetMode = false
+                    }
+                    const pacModes: Record<string, number> = {
+                        약풍: 0x0202,
+                        중풍: 0x0404,
+                        강풍: 0x0606,
+                        롱파워: 0x0909,
+                    }
+                    return pacModes[val]
+                }
                 const modes2clip: Record<string, number> = {
                     'very low': 2,
                     low: 3,
@@ -363,6 +516,7 @@ export default class Device extends TLVDevice {
                     high: 5,
                     'very high': 6,
                     auto: 8,
+                    'long power': 9,
                 }
                 return modes2clip[val]
             },
@@ -378,7 +532,24 @@ export default class Device extends TLVDevice {
             write_attach: [0x1f9, 0x1fa],
         })
 
-        if (this.raw_clip_state[0x2cd] & 4) {
+        if (isPac910604) {
+            config['components']['climate']['swing_modes'] = ['정지', '회전']
+            config['components']['climate']['swing_horizontal_modes'] = ['정지', '우측', '좌측', '좌우']
+            this.addField(config, {
+                id: 0x205,
+                name: 'swing_mode',
+                comp: 'climate',
+                read_xform: (raw) => (raw ? '회전' : '정지'),
+                write_xform: (val) => (val === '회전' ? 1 : 0),
+            })
+            this.addField(config, {
+                id: 0x206,
+                name: 'swing_horizontal_mode',
+                comp: 'climate',
+                read_xform: (raw) => ({ 0x0000: '정지', 0x0001: '우측', 0x0100: '좌측', 0x0101: '좌우' })[raw],
+                write_xform: (val) => ({ 정지: 0x0000, 우측: 0x0001, 좌측: 0x0100, 좌우: 0x0101 })[val],
+            })
+        } else if (this.raw_clip_state[0x2cd] & 4) {
             config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
             this.addField(config, {
                 id: 0x321,
@@ -556,8 +727,33 @@ export default class Device extends TLVDevice {
 
         const jetCool: boolean = !!(this.raw_clip_state[0x2cd] & 1)
         const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
-        if (jetCool || jetHeat) {
-            this.addJetField(config, 0x323, 'jet', 'Jet', 'mdi:wind-power', jetCool, jetHeat)
+        if (isPac910604) {
+            this.addField(
+                config,
+                {
+                    id: 0x236,
+                    name: '',
+                    comp: 'coolpower',
+                    read_xform: (raw) => (raw ? 'ON' : 'OFF'),
+                    write_xform: (val) => (val === 'ON' ? 1 : 0),
+                    read_callback: (val) => {
+                        this.jetMode = val === 'ON'
+                        if (this.jetMode) this.HA.publishProperty(this.id, 'climate-fan_mode', '쿨파워')
+                        return false
+                    },
+                },
+                false,
+            )
+        } else if (jetCool || jetHeat) {
+            this.addJetField(
+                config,
+                0x323,
+                'jet',
+                isPac910604 ? 'Cool power' : 'Jet',
+                'mdi:wind-power',
+                jetCool,
+                jetHeat,
+            )
         }
 
         if (this.raw_clip_state[0x2d3] & 1) {
@@ -570,7 +766,11 @@ export default class Device extends TLVDevice {
             this.addTimerField(config, 0x21b, 'stoptimer', 'Turn-off timer', 'mdi:timer-stop', 24)
         }
 
-        if (this.raw_clip_state[0x2cc] & 2) {
+        if (isPac910604) {
+            // This PAC reports 0x20D in every full state response, so expose a
+            // regular state-backed switch instead of an assumed-state control.
+            this.addConfigSwitchField(config, 0x20d, 'energysave', 'Energy saving', 'mdi:flower')
+        } else if (this.raw_clip_state[0x2cc] & 2) {
             // Can be enabled only when running in the cooling mode
             this.addModeDependentConfigSwitchField(
                 config,
@@ -583,7 +783,11 @@ export default class Device extends TLVDevice {
             )
         }
 
-        if (this.raw_clip_state[0x2cc] & 4) {
+        if (isPac910604) {
+            // PAC_910604_WW reports these live values even though its legacy
+            // 0x2CC capability bits do not advertise them.
+            this.addConfigSwitchField(config, 0x20e, 'autodry', 'Auto dry', 'mdi:hair-dryer')
+        } else if (this.raw_clip_state[0x2cc] & 4) {
             const compADry = {
                 platform: 'binary_sensor',
                 unique_id: '$deviceid-autodry',
@@ -617,6 +821,14 @@ export default class Device extends TLVDevice {
                 comp: 'autodryremain',
                 writable: false,
             })
+        }
+
+        if (isPac910604) {
+            // Live command captures from this model:
+            //   0x21F: front display light (1=on)
+            //   0x23E: smart-care wind mode (1=on)
+            this.addConfigSwitchField(config, 0x21f, 'displaylight', 'Display light', 'mdi:lightbulb')
+            this.addConfigSwitchField(config, 0x23e, 'smartcare', 'Smart care', 'mdi:creation')
         }
 
         if (this.getIDUActionRunningTLVNum() != null) {
@@ -715,23 +927,64 @@ export default class Device extends TLVDevice {
 
             config['components']['energy_current'] = energyCurrent
 
-            // The measurements reported by AC appear to be Watts, but they are not accurate in several aspects:
+            // The measurements reported by RAC_056905_WW appear to be Watts, but they are not accurate in several aspects:
             // - the value is biased by +50
             // - idle consumption (around 4W) and the 4-way valve is not included
             // - fan modes' consumption appears to be approximated
             //
             // The formula below is expected to be within +/-10% of the actual power consumption. The discrepancy may
             // be highest in fan-only modes.
+            //
+            // PAC_910604_WW live measurements were compared against an external power meter and match the raw value,
+            // so the upstream RAC-specific correction must not be applied to that model.
             this.addField(config, {
                 id: 0x2b3,
                 name: '',
                 comp: 'energy_current',
                 writable: false,
-                read_xform: (raw) => Math.max(5, raw - 60),
+                read_xform: (raw) => (isPac910604 ? raw : Math.max(5, raw - 60)),
             })
         }
 
+        if (isPac910604) {
+            const energyCurrentHour = {
+                platform: 'sensor',
+                device_class: 'energy',
+                unique_id: '$deviceid-energy_current_hour',
+                state_topic: '$this/energy_current_hour',
+                name: '현재 시간 누적 사용량',
+                unit_of_measurement: 'Wh',
+                state_class: 'total',
+                icon: 'mdi:lightning-bolt',
+            }
+            const energyToday = {
+                platform: 'sensor',
+                device_class: 'energy',
+                unique_id: '$deviceid-energy_today',
+                state_topic: '$this/energy_today',
+                name: '오늘 누적 사용량',
+                unit_of_measurement: 'Wh',
+                state_class: 'total',
+                icon: 'mdi:calendar-today',
+            }
+            const energyMonth = {
+                platform: 'sensor',
+                device_class: 'energy',
+                unique_id: '$deviceid-energy_month',
+                state_topic: '$this/energy_month',
+                name: '금월 누적 사용량',
+                unit_of_measurement: 'kWh',
+                state_class: 'total',
+                suggested_display_precision: 3,
+                icon: 'mdi:calendar-month',
+            }
+            config['components']['energy_current_hour'] = energyCurrentHour
+            config['components']['energy_today'] = energyToday
+            config['components']['energy_month'] = energyMonth
+        }
+
         this.setConfig(config)
+        if (isPac910604) this.publishEnergyStats()
 
         if (this.filterLifeTime) {
             this.publishFilterData()
@@ -750,6 +1003,94 @@ export default class Device extends TLVDevice {
         }
 
         this.query()
+    }
+
+    private energyStatsPath() {
+        const dir = dataDirectory()
+        return dir ? join(dir, `air-conditioner-energy-${this.id}.json`) : undefined
+    }
+
+    private loadEnergyStats(now = Date.now()): EnergyStats {
+        const current = { hour: localHour(now), date: localDate(now), month: localMonth(now) }
+        const empty: EnergyStats = { ...current, hourWh: 0, dayWh: 0, monthWh: 0 }
+        const path = this.energyStatsPath()
+        if (!path) return empty
+        try {
+            const saved = JSON.parse(readFileSync(path, 'utf-8')) as EnergyStats
+            return {
+                ...current,
+                hourWh: saved.hour === current.hour ? Number(saved.hourWh) || 0 : 0,
+                dayWh: saved.date === current.date ? Number(saved.dayWh) || 0 : 0,
+                monthWh: saved.month === current.month ? Number(saved.monthWh) || 0 : 0,
+                ...(saved.lastReportSignature ? { lastReportSignature: saved.lastReportSignature } : {}),
+                ...(Number.isFinite(saved.lastReportAt) ? { lastReportAt: Number(saved.lastReportAt) } : {}),
+            }
+        } catch {
+            return empty
+        }
+    }
+
+    private saveEnergyStats() {
+        const path = this.energyStatsPath()
+        if (!path) return
+        const temporary = `${path}.tmp`
+        try {
+            writeFileSync(temporary, JSON.stringify(this.energyStats))
+            renameSync(temporary, path)
+        } catch (err) {
+            console.warn(`Unable to save air conditioner energy statistics: ${err}`)
+        }
+    }
+
+    private publishEnergyStats() {
+        this.HA.publishProperty(this.id, 'energy_current_hour', this.energyStats.hourWh)
+        this.HA.publishProperty(this.id, 'energy_today', this.energyStats.dayWh)
+        this.HA.publishProperty(this.id, 'energy_month', Number((this.energyStats.monthWh / 1000).toFixed(3)))
+    }
+
+    private processEnergyInterval(intervalWh: number, intervalSeconds: number, now = Date.now()) {
+        this.rollEnergyPeriods(now)
+        const signature = `${intervalWh}:${intervalSeconds}`
+        if (
+            this.energyStats.lastReportSignature === signature &&
+            this.energyStats.lastReportAt != null &&
+            now - this.energyStats.lastReportAt < 2 * 60_000
+        )
+            return
+
+        this.energyStats.lastReportSignature = signature
+        this.energyStats.lastReportAt = now
+        this.energyStats.hourWh += intervalWh
+        this.energyStats.dayWh += intervalWh
+        this.energyStats.monthWh += intervalWh
+        this.publishEnergyStats()
+        this.saveEnergyStats()
+    }
+
+    private rollEnergyPeriods(now = Date.now()) {
+        const hour = localHour(now)
+        const date = localDate(now)
+        const month = localMonth(now)
+        let changed = false
+        if (this.energyStats.month !== month) {
+            this.energyStats.month = month
+            this.energyStats.monthWh = 0
+            changed = true
+        }
+        if (this.energyStats.date !== date) {
+            this.energyStats.date = date
+            this.energyStats.dayWh = 0
+            changed = true
+        }
+        if (this.energyStats.hour !== hour) {
+            this.energyStats.hour = hour
+            this.energyStats.hourWh = 0
+            changed = true
+        }
+        if (changed) {
+            this.publishEnergyStats()
+            this.saveEnergyStats()
+        }
     }
 
     addTimerField(config: DeviceDiscovery, id: number, name: string, desc: string, icon: string, max: number) {
@@ -790,7 +1131,9 @@ export default class Device extends TLVDevice {
         jetHeat: boolean,
     ) {
         const descFull =
-            desc + ' ' + (jetCool ? 'cool' : '') + (jetCool && jetHeat ? '/' : '') + (jetHeat ? 'heat' : '')
+            desc === 'Cool power'
+                ? desc
+                : desc + ' ' + (jetCool ? 'cool' : '') + (jetCool && jetHeat ? '/' : '') + (jetHeat ? 'heat' : '')
 
         const comp = {
             platform: 'switch',

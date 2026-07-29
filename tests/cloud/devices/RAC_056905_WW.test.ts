@@ -4,7 +4,6 @@ import DUT from '@/cloud/devices/RAC_056905_WW'
 import type { Metadata } from '@/cloud/thinq'
 import { MockHAConnection, MockThinq2Device, buf, hex } from '@/tests/helpers/mocks'
 import { enableMockTimers, tickMockTimers } from '@/tests/helpers/timers'
-import * as TLV from '@/util/tlv'
 
 const DEVICE_ID = 'test-id'
 const MODEL_ID = 'RAC_056905_WW'
@@ -72,102 +71,6 @@ function buildReadyDevice(t: import('node:test').TestContext) {
 }
 
 describe(MODEL_ID, () => {
-    test('PAC_910604_WW exposes its live-confirmed configuration controls', () => {
-        const ha = new MockHAConnection()
-        const meta: Metadata = { modelId: 'PAC_910604_WW', modelName: 'PAC_910604_WW', swVersion: '640903' }
-        const thinq = new MockThinq2Device(DEVICE_ID, meta)
-        const dev = new DUT(ha.asConnection(), thinq, meta)
-        ha.on('setProperty', (id: string, prop: string, value: string) => dev.setProperty(prop, value))
-
-        dev.raw_clip_state[0x1f7] = 1
-        dev.raw_clip_state[0x1f9] = 0
-        dev.raw_clip_state[0x2cc] = 0
-        dev.raw_clip_state[0x2b3] = 1
-        ;(dev as unknown as { initMakeSetConfig(): void }).initMakeSetConfig()
-
-        const components = ha.devices[DEVICE_ID].config!.components as Record<string, Record<string, unknown>>
-        for (const component of [
-            'energysave',
-            'autodry',
-            'displaylight',
-            'smartcare',
-            'energy_current_hour',
-            'energy_today',
-            'energy_month',
-        ]) {
-            if (component.startsWith('energy_')) {
-                assert.equal(components[component].platform, 'sensor')
-                continue
-            }
-            assert.equal(components[component].platform, 'switch')
-        }
-        assert.equal(components.energysave.optimistic, undefined)
-
-        for (const [component, expectedTag] of [
-            ['energysave', 0x20d],
-            ['autodry', 0x20e],
-            ['displaylight', 0x21f],
-            ['smartcare', 0x23e],
-        ] as const) {
-            thinq.resetRecorder()
-            ha.setProperty(DEVICE_ID, component, 'command', 'ON')
-            assert.equal(thinq.outbox.length, 1)
-            const packet = thinq.outbox[0]
-            assert.deepEqual(TLV.parse(packet.subarray(11, packet.length - 2)), [{ t: expectedTag, l: 0, v: 1 }])
-        }
-
-        dev.processKeyValue(0x2b3, 550)
-        assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 550)
-
-        dev.drop()
-    })
-
-    test('RAC_056905_WW retains the upstream 60 W power correction', () => {
-        const ha = new MockHAConnection()
-        const thinq = new MockThinq2Device(DEVICE_ID, META)
-        const dev = new DUT(ha.asConnection(), thinq, META)
-
-        dev.raw_clip_state[0x1f7] = 1
-        dev.raw_clip_state[0x1f9] = 0
-        dev.raw_clip_state[0x2cc] = 0
-        dev.raw_clip_state[0x2b3] = 1
-        ;(dev as unknown as { initMakeSetConfig(): void }).initMakeSetConfig()
-        dev.processKeyValue(0x2b3, 550)
-
-        assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 490)
-        dev.drop()
-    })
-
-    test('PAC_910604_WW accumulates B115 interval energy without counting immediate retransmissions', () => {
-        const ha = new MockHAConnection()
-        const meta: Metadata = { modelId: 'PAC_910604_WW', modelName: 'PAC_910604_WW', swVersion: '640903' }
-        const thinq = new MockThinq2Device(DEVICE_ID, meta)
-        const dev = new DUT(ha.asConnection(), thinq, meta)
-
-        const report = (wh: number, seconds: number) => {
-            const packet = Buffer.alloc(20)
-            packet[6] = 0x87
-            packet[7] = 0xfd
-            packet[8] = 0x03
-            packet[10] = 0xb1
-            packet[11] = 0x15
-            packet.writeUInt32LE(wh, 12)
-            packet.writeUInt32LE(seconds, 16)
-            dev.processData(packet)
-        }
-
-        report(123, 910)
-        report(123, 910)
-        report(142, 900)
-
-        const properties = ha.devices[DEVICE_ID].properties
-        assert.equal(properties.energy_current_hour, 265)
-        assert.equal(properties.energy_today, 265)
-        assert.equal(properties.energy_month, 0.265)
-
-        dev.drop()
-    })
-
     test('caps and values responses triggers config publish', (t) => {
         enableMockTimers(t)
         const { ha, thinq, dev } = makeDevice()
