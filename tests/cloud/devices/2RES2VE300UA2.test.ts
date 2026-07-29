@@ -32,6 +32,9 @@ describe('2RES2VE300UA2', () => {
             'door_open_duration_today',
             'door_open_warning',
             'fresh_air_filter',
+            'energy_current_hour',
+            'energy_today',
+            'energy_month',
         ])
             assert.ok(c[name], name)
         assert.equal((c.fridge as { platform: string }).platform, 'climate')
@@ -68,6 +71,49 @@ describe('2RES2VE300UA2', () => {
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
         assert.equal(p.fresh_air_filter, '양호')
+    })
+
+    test('accumulates 15-minute energy reports and ignores retransmits in the same interval', () => {
+        const { ha, dev } = makeDevice()
+        const processEnergy = (
+            dev as unknown as { processEnergyInterval: (intervalWh: number, now: number) => void }
+        ).processEnergyInterval.bind(dev)
+        const firstInterval = Date.UTC(2026, 6, 29, 0, 13)
+        const secondInterval = Date.UTC(2026, 6, 29, 0, 28)
+
+        processEnergy(31, firstInterval)
+        processEnergy(31, firstInterval + 1_000)
+        processEnergy(33, secondInterval)
+
+        const properties = ha.devices[DEVICE_ID].properties
+        assert.equal(properties.energy_current_hour, 64)
+        assert.equal(properties.energy_today, 64)
+        assert.equal(properties.energy_month, 0.064)
+    })
+
+    test('decodes the captured 10AF interval value as big-endian Wh', () => {
+        const { ha, thinq } = makeDevice()
+
+        thinq.emit('data', buf('AA0910AF0F0021F7BB'))
+
+        assert.equal(ha.devices[DEVICE_ID].properties.energy_current_hour, 33)
+        assert.equal(ha.devices[DEVICE_ID].properties.energy_today, 33)
+        assert.equal(ha.devices[DEVICE_ID].properties.energy_month, 0.033)
+    })
+
+    test('resets hour, day and month totals on Korea-time boundaries', () => {
+        const { ha, dev } = makeDevice()
+        const processEnergy = (
+            dev as unknown as { processEnergyInterval: (intervalWh: number, now: number) => void }
+        ).processEnergyInterval.bind(dev)
+
+        processEnergy(31, Date.parse('2026-07-31T14:58:00Z')) // 23:58 KST
+        processEnergy(33, Date.parse('2026-07-31T15:13:00Z')) // 00:13 KST, next month
+
+        const properties = ha.devices[DEVICE_ID].properties
+        assert.equal(properties.energy_current_hour, 33)
+        assert.equal(properties.energy_today, 33)
+        assert.equal(properties.energy_month, 0.033)
     })
 
     test('writes the live-captured fridge and freezer command layouts', () => {

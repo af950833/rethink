@@ -17,6 +17,16 @@ type DoorStats = {
     openSince?: number
 }
 
+type EnergyStats = {
+    hour: string
+    date: string
+    month: string
+    hourWh: number
+    dayWh: number
+    monthWh: number
+    lastIntervalKey?: number
+}
+
 function localDate(timestamp = Date.now()) {
     return new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Seoul',
@@ -24,6 +34,23 @@ function localDate(timestamp = Date.now()) {
         month: '2-digit',
         day: '2-digit',
     }).format(timestamp)
+}
+
+function localHour(timestamp = Date.now()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(timestamp)
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}`
+}
+
+function localMonth(timestamp = Date.now()) {
+    return localDate(timestamp).slice(0, 7)
 }
 
 function dataDirectory() {
@@ -144,18 +171,52 @@ export default class Device extends AABBDevice {
                         device_class: 'enum',
                         options: ['양호', '교체 필요'],
                     },
+                    energy_current_hour: {
+                        platform: 'sensor',
+                        device_class: 'energy',
+                        unique_id: '$deviceid-energy_current_hour',
+                        state_topic: '$this/energy_current_hour',
+                        name: '현재 시간 누적 사용량',
+                        unit_of_measurement: 'Wh',
+                        state_class: 'total',
+                        icon: 'mdi:lightning-bolt',
+                    },
+                    energy_today: {
+                        platform: 'sensor',
+                        device_class: 'energy',
+                        unique_id: '$deviceid-energy_today',
+                        state_topic: '$this/energy_today',
+                        name: '오늘 누적 사용량',
+                        unit_of_measurement: 'Wh',
+                        state_class: 'total',
+                        icon: 'mdi:calendar-today',
+                    },
+                    energy_month: {
+                        platform: 'sensor',
+                        device_class: 'energy',
+                        unique_id: '$deviceid-energy_month',
+                        state_topic: '$this/energy_month',
+                        name: '금월 누적 사용량',
+                        unit_of_measurement: 'kWh',
+                        state_class: 'total',
+                        suggested_display_precision: 3,
+                        icon: 'mdi:calendar-month',
+                    },
                 },
             }),
         )
         this.doorStats = this.loadDoorStats()
-        this.scheduleMidnightReset()
+        this.energyStats = this.loadEnergyStats()
+        this.schedulePeriodReset()
         this.publishDoorStats()
+        this.publishEnergyStats()
     }
 
     private doorOpen?: boolean
     private doorWarningTimer?: NodeJS.Timeout
     private midnightTimer?: NodeJS.Timeout
     private doorStats: DoorStats
+    private energyStats: EnergyStats
 
     start() {
         this.send(Buffer.from('F0ED1211010000010400', 'hex'))
@@ -167,6 +228,8 @@ export default class Device extends AABBDevice {
             this.processStatus(buf.subarray(2))
         } else if (buf[1] === 0xec && buf.length === 2 + STATUS_LENGTH * 2) {
             this.processStatus(buf.subarray(2 + STATUS_LENGTH))
+        } else if (buf[1] === 0xaf && buf.length === 5 && buf[2] === 0x0f) {
+            this.processEnergyInterval(buf.readUInt16BE(3))
         }
     }
 
@@ -213,6 +276,93 @@ export default class Device extends AABBDevice {
             renameSync(temporary, path)
         } catch (err) {
             console.warn(`Unable to save refrigerator door statistics: ${err}`)
+        }
+    }
+
+    private energyStatsPath() {
+        const dir = dataDirectory()
+        return dir ? join(dir, `refrigerator-energy-${this.id}.json`) : undefined
+    }
+
+    private loadEnergyStats(now = Date.now()): EnergyStats {
+        const current = {
+            hour: localHour(now),
+            date: localDate(now),
+            month: localMonth(now),
+        }
+        const empty: EnergyStats = { ...current, hourWh: 0, dayWh: 0, monthWh: 0 }
+        const path = this.energyStatsPath()
+        if (!path) return empty
+        try {
+            const saved = JSON.parse(readFileSync(path, 'utf-8')) as EnergyStats
+            return {
+                ...current,
+                hourWh: saved.hour === current.hour ? Number(saved.hourWh) || 0 : 0,
+                dayWh: saved.date === current.date ? Number(saved.dayWh) || 0 : 0,
+                monthWh: saved.month === current.month ? Number(saved.monthWh) || 0 : 0,
+                ...(Number.isFinite(saved.lastIntervalKey) ? { lastIntervalKey: Number(saved.lastIntervalKey) } : {}),
+            }
+        } catch {
+            return empty
+        }
+    }
+
+    private saveEnergyStats() {
+        const path = this.energyStatsPath()
+        if (!path) return
+        const temporary = `${path}.tmp`
+        try {
+            writeFileSync(temporary, JSON.stringify(this.energyStats))
+            renameSync(temporary, path)
+        } catch (err) {
+            console.warn(`Unable to save refrigerator energy statistics: ${err}`)
+        }
+    }
+
+    private publishEnergyStats() {
+        this.publishProperty('energy_current_hour', this.energyStats.hourWh)
+        this.publishProperty('energy_today', this.energyStats.dayWh)
+        this.publishProperty('energy_month', Number((this.energyStats.monthWh / 1000).toFixed(3)))
+    }
+
+    private processEnergyInterval(intervalWh: number, now = Date.now()) {
+        this.rollEnergyPeriods(now)
+        const intervalKey = Math.floor(now / (15 * 60_000))
+        if (this.energyStats.lastIntervalKey === intervalKey) return
+
+        this.energyStats.lastIntervalKey = intervalKey
+        this.energyStats.hourWh += intervalWh
+        this.energyStats.dayWh += intervalWh
+        this.energyStats.monthWh += intervalWh
+        this.publishEnergyStats()
+        this.saveEnergyStats()
+    }
+
+    private rollEnergyPeriods(now = Date.now()) {
+        const hour = localHour(now)
+        const date = localDate(now)
+        const month = localMonth(now)
+        let changed = false
+
+        if (this.energyStats.month !== month) {
+            this.energyStats.month = month
+            this.energyStats.monthWh = 0
+            changed = true
+        }
+        if (this.energyStats.date !== date) {
+            this.energyStats.date = date
+            this.energyStats.dayWh = 0
+            changed = true
+        }
+        if (this.energyStats.hour !== hour) {
+            this.energyStats.hour = hour
+            this.energyStats.hourWh = 0
+            changed = true
+        }
+
+        if (changed) {
+            this.publishEnergyStats()
+            this.saveEnergyStats()
         }
     }
 
@@ -266,10 +416,13 @@ export default class Device extends AABBDevice {
         this.saveDoorStats()
     }
 
-    private scheduleMidnightReset() {
-        // Check shortly after each minute boundary. This keeps the daily sensors
-        // correct even if the refrigerator sends no state packet at midnight.
-        this.midnightTimer = setInterval(() => this.rollDoorStatsDay(), 60_000)
+    private schedulePeriodReset() {
+        // Keep time-window sensors correct even if the refrigerator sends no state
+        // packet exactly on an hour, day or month boundary.
+        this.midnightTimer = setInterval(() => {
+            this.rollDoorStatsDay()
+            this.rollEnergyPeriods()
+        }, 60_000)
         this.midnightTimer.unref()
     }
 
