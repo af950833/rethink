@@ -82,6 +82,7 @@ describe(MODEL_ID, () => {
         dev.raw_clip_state[0x1f7] = 1
         dev.raw_clip_state[0x1f9] = 0
         dev.raw_clip_state[0x2cc] = 0
+        dev.raw_clip_state[0x2b3] = 1
         ;(dev as unknown as { initMakeSetConfig(): void }).initMakeSetConfig()
 
         const components = ha.devices[DEVICE_ID].config!.components as Record<string, Record<string, unknown>>
@@ -115,6 +116,25 @@ describe(MODEL_ID, () => {
             assert.deepEqual(TLV.parse(packet.subarray(11, packet.length - 2)), [{ t: expectedTag, l: 0, v: 1 }])
         }
 
+        dev.processKeyValue(0x2b3, 550)
+        assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 550)
+
+        dev.drop()
+    })
+
+    test('RAC_056905_WW retains the upstream 60 W power correction', () => {
+        const ha = new MockHAConnection()
+        const thinq = new MockThinq2Device(DEVICE_ID, META)
+        const dev = new DUT(ha.asConnection(), thinq, META)
+
+        dev.raw_clip_state[0x1f7] = 1
+        dev.raw_clip_state[0x1f9] = 0
+        dev.raw_clip_state[0x2cc] = 0
+        dev.raw_clip_state[0x2b3] = 1
+        ;(dev as unknown as { initMakeSetConfig(): void }).initMakeSetConfig()
+        dev.processKeyValue(0x2b3, 550)
+
+        assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 490)
         dev.drop()
     })
 

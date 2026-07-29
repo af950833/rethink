@@ -927,19 +927,22 @@ export default class Device extends TLVDevice {
 
             config['components']['energy_current'] = energyCurrent
 
-            // The measurements reported by AC appear to be Watts, but they are not accurate in several aspects:
+            // The measurements reported by RAC_056905_WW appear to be Watts, but they are not accurate in several aspects:
             // - the value is biased by +50
             // - idle consumption (around 4W) and the 4-way valve is not included
             // - fan modes' consumption appears to be approximated
             //
             // The formula below is expected to be within +/-10% of the actual power consumption. The discrepancy may
             // be highest in fan-only modes.
+            //
+            // PAC_910604_WW live measurements were compared against an external power meter and match the raw value,
+            // so the upstream RAC-specific correction must not be applied to that model.
             this.addField(config, {
                 id: 0x2b3,
                 name: '',
                 comp: 'energy_current',
                 writable: false,
-                read_xform: (raw) => Math.max(5, raw - 60),
+                read_xform: (raw) => (isPac910604 ? raw : Math.max(5, raw - 60)),
             })
         }
 
