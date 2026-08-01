@@ -102,4 +102,51 @@ describe('PAC_910604_WW', () => {
         assert.equal(properties.energy_month, 0.265)
         dev.drop()
     })
+
+    test('leaves fan-only correctly when Cool Power or Long Power is selected', async () => {
+        const coolPower = configureDevice()
+        coolPower.dev.raw_clip_state[0x1f9] = 5
+        coolPower.dev.raw_clip_state[0x1fa] = 0x0404
+        coolPower.dev.raw_clip_state[0x1fe] = 56
+        coolPower.thinq.resetRecorder()
+
+        const longPower = configureDevice()
+        longPower.dev.raw_clip_state[0x1f9] = 5
+        longPower.dev.raw_clip_state[0x1fa] = 0x0404
+        longPower.dev.raw_clip_state[0x1fe] = 56
+        longPower.thinq.resetRecorder()
+
+        let coolPackets: TLV.TLV[][] = []
+        let longPackets: TLV.TLV[][] = []
+        try {
+            coolPower.ha.setProperty(DEVICE_ID, 'climate', 'fan_mode_command', '쿨파워')
+            longPower.ha.setProperty(DEVICE_ID, 'climate', 'fan_mode_command', '롱파워')
+
+            await new Promise((resolve) => setTimeout(resolve, 1800))
+
+            coolPackets = coolPower.thinq.outbox.map((packet) => TLV.parse(packet.subarray(11, packet.length - 2)))
+            longPackets = longPower.thinq.outbox.map((packet) => TLV.parse(packet.subarray(11, packet.length - 2)))
+        } finally {
+            coolPower.dev.drop()
+            longPower.dev.drop()
+        }
+
+        assert.deepEqual(coolPackets, [
+            [{ t: 0x236, l: 0, v: 1 }],
+            [{ t: 0x20f, l: 0, v: 0 }],
+        ])
+        assert.deepEqual(longPackets, [
+            [
+                { t: 0x1f9, l: 0, v: 0 },
+                { t: 0x1fa, l: 2, v: 0x0404 },
+                { t: 0x1fe, l: 1, v: 56 },
+            ],
+            [{ t: 0x20f, l: 0, v: 0 }],
+            [
+                { t: 0x1fa, l: 2, v: 0x0909 },
+                { t: 0x1f9, l: 0, v: 0 },
+                { t: 0x1fe, l: 1, v: 56 },
+            ],
+        ])
+    })
 })

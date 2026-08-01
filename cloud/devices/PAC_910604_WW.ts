@@ -82,6 +82,7 @@ export default class Device extends TLVDevice {
     filterInitialQueryTimeout: ReturnType<typeof setTimeout> | undefined
     filterQueryTimer: ReturnType<typeof setInterval> | undefined
     pacFanOnlyStopTimeout: ReturnType<typeof setTimeout> | undefined
+    pacLongPowerTimeout: ReturnType<typeof setTimeout> | undefined
     energyResetTimer: ReturnType<typeof setInterval> | undefined
     energyStats: EnergyStats
 
@@ -119,6 +120,11 @@ export default class Device extends TLVDevice {
         if (this.pacFanOnlyStopTimeout != undefined) {
             clearTimeout(this.pacFanOnlyStopTimeout)
             this.pacFanOnlyStopTimeout = undefined
+        }
+
+        if (this.pacLongPowerTimeout != undefined) {
+            clearTimeout(this.pacLongPowerTimeout)
+            this.pacLongPowerTimeout = undefined
         }
 
         if (this.energyResetTimer != undefined) {
@@ -478,11 +484,7 @@ export default class Device extends TLVDevice {
             },
             write_callback: (raw) => {
                 if (isPac910604 && this.getModeTLV() === 5 && (raw === 0 || raw === 1)) {
-                    if (this.pacFanOnlyStopTimeout != undefined) clearTimeout(this.pacFanOnlyStopTimeout)
-                    this.pacFanOnlyStopTimeout = setTimeout(() => {
-                        this.pacFanOnlyStopTimeout = undefined
-                        this.send([1, 1, 2, 1, 0], [{ t: 0x20f, v: 0 }])
-                    }, 1400)
+                    this.schedulePacFanOnlyStop()
                 }
                 return true
             },
@@ -520,6 +522,7 @@ export default class Device extends TLVDevice {
             write_xform: (val) => {
                 if (isPac910604) {
                     if (val === '쿨파워') {
+                        if (this.getModeTLV() === 5) this.schedulePacFanOnlyStop()
                         if (!this.jetMode) {
                             this.setProperty('coolpower-', 'ON')
                             this.jetMode = true
@@ -529,6 +532,15 @@ export default class Device extends TLVDevice {
                     if (this.jetMode) {
                         this.setProperty('coolpower-', 'OFF')
                         this.jetMode = false
+                    }
+                    if (val === '롱파워' && this.getModeTLV() === 5) {
+                        this.setProperty('climate-mode', 'cool')
+                        if (this.pacLongPowerTimeout != undefined) clearTimeout(this.pacLongPowerTimeout)
+                        this.pacLongPowerTimeout = setTimeout(() => {
+                            this.pacLongPowerTimeout = undefined
+                            this.setProperty('climate-fan_mode', '롱파워')
+                        }, 1700)
+                        return null
                     }
                     const pacModes: Record<string, number> = {
                         약풍: 0x0202,
@@ -1293,6 +1305,14 @@ export default class Device extends TLVDevice {
             },
             read_xform,
         )
+    }
+
+    private schedulePacFanOnlyStop() {
+        if (this.pacFanOnlyStopTimeout != undefined) clearTimeout(this.pacFanOnlyStopTimeout)
+        this.pacFanOnlyStopTimeout = setTimeout(() => {
+            this.pacFanOnlyStopTimeout = undefined
+            this.send([1, 1, 2, 1, 0], [{ t: 0x20f, v: 0 }])
+        }, 1400)
     }
 
     addConfigSwitchField(config: DeviceDiscovery, id: number, name: string, desc: string, icon: string) {
