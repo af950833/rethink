@@ -10,6 +10,23 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 const STATUS_LENGTH = 68
 const DOOR_WARNING_MS = 60_000
 
+const FRESH_AIR_FILTER_STATES: Record<number, string> = {
+    // The appliance protocol encodes the model-JSON enum index plus one.
+    // LG model JSON: OFF=0, AUTO=1, POWER=2, REPLACE=3,
+    // SMART_STORAGE_POWER=4, SMART_STORAGE_OFF=5, SMART_STORAGE_ON=6.
+    1: '꺼짐',
+    2: '자동',
+    3: '강력',
+    4: '교체 필요',
+    5: '스마트 안심 보관 강력',
+    6: '스마트 안심 보관 꺼짐',
+    7: '스마트 안심 보관 켜짐',
+}
+
+function freshAirFilterState(raw: number) {
+    return FRESH_AIR_FILTER_STATES[raw] ?? '알 수 없음'
+}
+
 type DoorStats = {
     date: string
     count: number
@@ -171,7 +188,7 @@ export default class Device extends AABBDevice {
                         name: 'Fresh air filter',
                         icon: 'mdi:air-filter',
                         device_class: 'enum',
-                        options: ['양호', '교체 필요'],
+                        options: [...Object.values(FRESH_AIR_FILTER_STATES), '알 수 없음'],
                     },
                     energy_current_hour: {
                         platform: 'sensor',
@@ -243,7 +260,7 @@ export default class Device extends AABBDevice {
         this.publishProperty('express_freeze', rec[3] === 2 ? 'ON' : 'OFF')
         this.publishProperty('express_cool', rec[16] === 1 ? 'ON' : 'OFF')
         this.processDoor(rec[7] === 1)
-        this.publishProperty('fresh_air_filter', rec[4] === 3 ? '교체 필요' : '양호')
+        this.publishProperty('fresh_air_filter', freshAirFilterState(rec[4]))
     }
 
     private statsPath() {

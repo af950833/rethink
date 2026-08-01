@@ -70,7 +70,32 @@ describe('2RES2VE300UA2', () => {
         assert.equal(p.express_cool, 'OFF')
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
-        assert.equal(p.fresh_air_filter, '양호')
+        assert.equal(p.fresh_air_filter, '스마트 안심 보관 켜짐')
+    })
+
+    test('decodes every fresh-air-filter state using the model JSON mapping', () => {
+        const { ha, dev } = makeDevice()
+        const processStatus = (dev as unknown as { processStatus: (status: Buffer) => void }).processStatus.bind(dev)
+        const expected = [
+            '꺼짐',
+            '자동',
+            '강력',
+            '교체 필요',
+            '스마트 안심 보관 강력',
+            '스마트 안심 보관 꺼짐',
+            '스마트 안심 보관 켜짐',
+        ]
+
+        expected.forEach((state, index) => {
+            const status = Buffer.alloc(68)
+            status[4] = index + 1
+            processStatus(status)
+            assert.equal(ha.devices[DEVICE_ID].properties.fresh_air_filter, state)
+        })
+
+        const unknown = Buffer.alloc(68, 0xff)
+        processStatus(unknown)
+        assert.equal(ha.devices[DEVICE_ID].properties.fresh_air_filter, '알 수 없음')
     })
 
     test('accumulates 15-minute energy reports and ignores retransmits in the same interval', () => {
