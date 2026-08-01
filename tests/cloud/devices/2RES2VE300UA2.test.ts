@@ -41,6 +41,10 @@ describe('2RES2VE300UA2', () => {
             assert.ok(c[name], name)
         assert.equal((c.fridge as { platform: string }).platform, 'climate')
         assert.equal((c.freezer as { platform: string }).platform, 'climate')
+        assert.equal((c.smart_care as { platform: string }).platform, 'binary_sensor')
+        assert.equal((c.night_glare as { platform: string }).platform, 'binary_sensor')
+        assert.equal((c.smart_care as { command_topic?: string }).command_topic, undefined)
+        assert.equal((c.night_glare as { command_topic?: string }).command_topic, undefined)
         assert.equal(c.flex_setpoint, undefined)
     })
 
@@ -184,28 +188,19 @@ describe('2RES2VE300UA2', () => {
         assert.equal(thinq.outbox[0][4 + 3], 2)
     })
 
-    test('writes the captured Smart Care+ control sequence', () => {
+    test('keeps Smart Care+ and night-glare states read-only', () => {
         const { thinq, dev } = makeDevice()
 
         dev.setProperty('smart_care', 'ON')
-        assert.equal(thinq.outbox[0][4 + 4], 6)
+        dev.setProperty('night_glare', 'ON')
 
-        thinq.resetRecorder()
-        dev.setProperty('smart_care', 'OFF')
-        assert.equal(thinq.outbox[0][4 + 17], 0)
+        assert.equal(thinq.outbox.length, 0)
     })
 
-    test('writes validated night-glare off and default schedule commands', () => {
+    test('still ignores unrelated unsupported properties', () => {
         const { thinq, dev } = makeDevice()
 
-        dev.setProperty('night_glare', 'OFF')
-        assert.equal(hex(thinq.outbox[0]), 'AA16F0100200000000000000000000000000001EB5BB')
-
-        thinq.resetRecorder()
-        dev.setProperty('night_glare', 'ON')
-        const body = thinq.outbox[0].subarray(2, -2)
-        assert.equal(body.subarray(0, 4).toString('hex'), 'f0100202')
-        assert.equal(body.subarray(7, 10).toString('hex'), '0c0000')
-        assert.equal(body.subarray(13).toString('hex'), '150000001e')
+        dev.setProperty('unsupported', 'ON')
+        assert.equal(thinq.outbox.length, 0)
     })
 })

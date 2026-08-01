@@ -85,34 +85,6 @@ function dataDirectory() {
 const CONTROL_TEMPLATE =
     'f017ff0000ffffffffffffffffffff00ffffffffffffff000000ffff00ffffffff00ffffffffffffffffff00ffffff1effffffffffffffffffffffffffffffffffffffffffffffff0affffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00ffffffffffffffffffffffffffffff'
 
-const SMART_CARE_ENABLE_DELAY_MS = 12_000
-
-function nightGlareCommand(enabled: boolean) {
-    if (!enabled) return Buffer.from('f0100200000000000000000000000000001e', 'hex')
-
-    // ThinQ's default custom schedule is 21:00-06:00 KST at 30% brightness.
-    // F010 stores the local YY-MM-DD followed by the corresponding UTC times
-    // (12:00 and 21:00) and applies the schedule every day.
-    const now = new Date()
-    const dateParts = new Intl.DateTimeFormat('en', {
-        timeZone: 'Asia/Seoul',
-        year: '2-digit',
-        month: '2-digit',
-        day: '2-digit',
-    }).formatToParts(now)
-    const part = (type: Intl.DateTimeFormatPartTypes) =>
-        Number(dateParts.find((item) => item.type === type)?.value ?? 0)
-    const date = Buffer.from([part('year'), part('month'), part('day')])
-
-    return Buffer.concat([
-        Buffer.from('f0100202', 'hex'),
-        date,
-        Buffer.from([12, 0, 0]),
-        date,
-        Buffer.from([21, 0, 0, 0, 30]),
-    ])
-}
-
 function fridgeRaw(celsius: number) {
     return 8 - celsius
 }
@@ -219,22 +191,20 @@ export default class Device extends AABBDevice {
                         options: [...Object.values(FRESH_AIR_FILTER_STATES), '알 수 없음'],
                     },
                     smart_care: {
-                        platform: 'switch',
+                        platform: 'binary_sensor',
                         unique_id: '$deviceid-smart_care',
                         state_topic: '$this/smart_care',
-                        command_topic: '$this/smart_care/set',
                         name: 'Smart care+',
                         icon: 'mdi:creation-outline',
-                        entity_category: 'config',
+                        entity_category: 'diagnostic',
                     },
                     night_glare: {
-                        platform: 'switch',
+                        platform: 'binary_sensor',
                         unique_id: '$deviceid-night_glare',
                         state_topic: '$this/night_glare',
-                        command_topic: '$this/night_glare/set',
                         name: 'Night glare prevention',
                         icon: 'mdi:brightness-4',
-                        entity_category: 'config',
+                        entity_category: 'diagnostic',
                     },
                     energy_current_hour: {
                         platform: 'sensor',
@@ -280,7 +250,6 @@ export default class Device extends AABBDevice {
     private doorOpen?: boolean
     private doorWarningTimer?: NodeJS.Timeout
     private midnightTimer?: NodeJS.Timeout
-    private smartCareTimer?: NodeJS.Timeout
     private doorStats: DoorStats
     private energyStats: EnergyStats
 
@@ -509,22 +478,6 @@ export default class Device extends AABBDevice {
             this.sendSetting(16, mqttValue === 'ON' ? 1 : 0)
         } else if (prop === 'express_freeze') {
             this.sendSetting(3, mqttValue === 'ON' ? 2 : 1)
-        } else if (prop === 'smart_care') {
-            if (this.smartCareTimer) clearTimeout(this.smartCareTimer)
-            this.smartCareTimer = undefined
-            if (mqttValue === 'ON') {
-                // ThinQ first enables Smart Storage, then enables Smart Care+.
-                this.sendSetting(4, 6)
-                this.smartCareTimer = setTimeout(() => {
-                    this.sendSetting(17, 1)
-                    this.smartCareTimer = undefined
-                }, SMART_CARE_ENABLE_DELAY_MS)
-                this.smartCareTimer.unref()
-            } else {
-                this.sendSetting(17, 0)
-            }
-        } else if (prop === 'night_glare') {
-            this.send(nightGlareCommand(mqttValue === 'ON'))
         }
     }
 }
