@@ -213,6 +213,11 @@ export default class Device extends AABBDevice {
                     },
                 },
             }),
+            {
+                fresh_air_filter: { platform: 'sensor' },
+                smart_care: { platform: 'switch' },
+                night_glare: { platform: 'switch' },
+            },
         )
         this.doorStats = this.loadDoorStats()
         this.energyStats = this.loadEnergyStats()

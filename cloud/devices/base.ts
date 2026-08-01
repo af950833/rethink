@@ -28,8 +28,14 @@ export default class HADevice {
         readonly id: string,
     ) {}
 
-    setConfig(config: DeviceDiscovery) {
+    setConfig(config: DeviceDiscovery, removedComponents?: Record<string, { platform: string }>) {
         this.config = config
+        if (removedComponents) {
+            this.HA.publishConfig(this.id, {
+                ...config,
+                components: { ...config.components, ...removedComponents } as DeviceDiscovery['components'],
+            })
+        }
         this.publishConfig()
     }
 

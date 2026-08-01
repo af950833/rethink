@@ -48,6 +48,19 @@ describe('2RES2VE300UA2', () => {
         assert.equal(c.flex_setpoint, undefined)
     })
 
+    test('removes legacy discovery components before publishing the current config', () => {
+        const { ha } = makeDevice()
+        assert.equal(ha.publishedConfigs.length, 2)
+        const removal = ha.publishedConfigs[0].components
+        assert.deepEqual(removal.fresh_air_filter, { platform: 'sensor' })
+        assert.deepEqual(removal.smart_care, { platform: 'switch' })
+        assert.deepEqual(removal.night_glare, { platform: 'switch' })
+        const current = ha.publishedConfigs[1].components
+        assert.equal(current.fresh_air_filter, undefined)
+        assert.equal(current.smart_care, undefined)
+        assert.equal(current.night_glare, undefined)
+    })
+
     test('counts door openings and accumulates only completed open time', () => {
         const { ha, dev } = makeDevice()
         const processDoor = (dev as unknown as { processDoor: (open: boolean, now: number) => void }).processDoor.bind(
