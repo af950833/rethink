@@ -31,9 +31,8 @@ describe('2RES2VE300UA2', () => {
             'door_open_count_today',
             'door_open_duration_today',
             'door_open_warning',
-            'fresh_air_filter',
-            'smart_care',
-            'night_glare',
+            'smart_care_status',
+            'night_glare_status',
             'energy_current_hour',
             'energy_today',
             'energy_month',
@@ -41,10 +40,11 @@ describe('2RES2VE300UA2', () => {
             assert.ok(c[name], name)
         assert.equal((c.fridge as { platform: string }).platform, 'climate')
         assert.equal((c.freezer as { platform: string }).platform, 'climate')
-        assert.equal((c.smart_care as { platform: string }).platform, 'binary_sensor')
-        assert.equal((c.night_glare as { platform: string }).platform, 'binary_sensor')
-        assert.equal((c.smart_care as { command_topic?: string }).command_topic, undefined)
-        assert.equal((c.night_glare as { command_topic?: string }).command_topic, undefined)
+        assert.equal((c.smart_care_status as { platform: string }).platform, 'binary_sensor')
+        assert.equal((c.night_glare_status as { platform: string }).platform, 'binary_sensor')
+        assert.equal((c.smart_care_status as { command_topic?: string }).command_topic, undefined)
+        assert.equal((c.night_glare_status as { command_topic?: string }).command_topic, undefined)
+        assert.equal(c.fresh_air_filter, undefined)
         assert.equal(c.flex_setpoint, undefined)
     })
 
@@ -76,34 +76,8 @@ describe('2RES2VE300UA2', () => {
         assert.equal(p.express_cool, 'OFF')
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
-        assert.equal(p.fresh_air_filter, '스마트 안심 보관 켜짐')
         assert.equal(p.smart_care, 'ON')
         assert.equal(p.night_glare, 'OFF')
-    })
-
-    test('decodes every fresh-air-filter state using the model JSON mapping', () => {
-        const { ha, dev } = makeDevice()
-        const processStatus = (dev as unknown as { processStatus: (status: Buffer) => void }).processStatus.bind(dev)
-        const expected = [
-            '꺼짐',
-            '자동',
-            '강력',
-            '교체 필요',
-            '스마트 안심 보관 강력',
-            '스마트 안심 보관 꺼짐',
-            '스마트 안심 보관 켜짐',
-        ]
-
-        expected.forEach((state, index) => {
-            const status = Buffer.alloc(68)
-            status[4] = index + 1
-            processStatus(status)
-            assert.equal(ha.devices[DEVICE_ID].properties.fresh_air_filter, state)
-        })
-
-        const unknown = Buffer.alloc(68, 0xff)
-        processStatus(unknown)
-        assert.equal(ha.devices[DEVICE_ID].properties.fresh_air_filter, '알 수 없음')
     })
 
     test('accumulates 15-minute energy reports and ignores retransmits in the same interval', () => {
