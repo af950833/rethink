@@ -199,7 +199,7 @@ describe('2RES2VE300UA2', () => {
         const { thinq, dev } = makeDevice()
 
         dev.setProperty('night_glare', 'OFF')
-        assert.equal(hex(thinq.outbox[0]), 'AA16F01002000000000000000000000000001EB5BB')
+        assert.equal(hex(thinq.outbox[0]), 'AA16F0100200000000000000000000000000001EB5BB')
 
         thinq.resetRecorder()
         dev.setProperty('night_glare', 'ON')
