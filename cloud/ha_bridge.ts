@@ -63,7 +63,12 @@ const t2deviceTypes: Record<string, T2Factory> = {
 
 class Bridge {
     haDevices = new Map<string, HADevice>()
-    constructor(readonly HA: Connection) {
+    pendingDrops = new Map<string, { device: HADevice; timer: ReturnType<typeof setTimeout> }>()
+
+    constructor(
+        readonly HA: Connection,
+        readonly disconnectGraceMs = 2000,
+    ) {
         HA.on('discovery', () => {
             this.haDevices.forEach((ha) => ha.publishConfig())
         })
@@ -75,8 +80,6 @@ class Bridge {
 
     newDevice(thinqdev: AnyDevice) {
         const meta = thinqdev.meta
-        const oldDevice = this.haDevices.get(thinqdev.id)
-        if (oldDevice) oldDevice.drop()
 
         let hadevice: HADevice | undefined
 
@@ -93,6 +96,19 @@ class Bridge {
             return
         }
 
+        const pendingDrop = this.pendingDrops.get(thinqdev.id)
+        if (pendingDrop) {
+            clearTimeout(pendingDrop.timer)
+            this.pendingDrops.delete(thinqdev.id)
+        }
+
+        // A ThinQ appliance may establish its replacement MQTT connection
+        // before the old socket closes (notably shortly after a washer powers
+        // itself off). The new handler publishes online during construction,
+        // so publishing offline for the old handler here only creates a brief
+        // unavailable -> available flicker for every entity. The old close
+        // listener is identity-guarded by dropDevice() and cannot take the
+        // replacement offline after this map entry is updated.
         this.haDevices.set(thinqdev.id, hadevice)
         thinqdev.on('close', () => this.dropDevice(hadevice))
 
@@ -102,8 +118,20 @@ class Bridge {
 
     dropDevice(ha: HADevice) {
         if (this.haDevices.get(ha.id) === ha) {
-            this.haDevices.delete(ha.id)
-            ha.drop()
+            const previous = this.pendingDrops.get(ha.id)
+            if (previous) clearTimeout(previous.timer)
+
+            const pending: { device: HADevice; timer: ReturnType<typeof setTimeout> } = {
+                device: ha,
+                timer: setTimeout(() => {
+                    if (this.haDevices.get(ha.id) === ha) {
+                        this.haDevices.delete(ha.id)
+                        ha.drop()
+                    }
+                    if (this.pendingDrops.get(ha.id) === pending) this.pendingDrops.delete(ha.id)
+                }, this.disconnectGraceMs),
+            }
+            this.pendingDrops.set(ha.id, pending)
         }
     }
 }
