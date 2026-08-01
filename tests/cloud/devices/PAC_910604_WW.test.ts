@@ -36,11 +36,15 @@ describe('PAC_910604_WW', () => {
             'autodry',
             'displaylight',
             'smartcare',
+            'humidity_sensor_mode',
             'energy_current_hour',
             'energy_today',
             'energy_month',
         ]) {
-            assert.equal(components[component].platform, component.startsWith('energy_') ? 'sensor' : 'switch')
+            assert.equal(
+                components[component].platform,
+                component.startsWith('energy_') ? 'sensor' : component === 'humidity_sensor_mode' ? 'select' : 'switch',
+            )
         }
 
         for (const [component, expectedTag] of [
@@ -59,6 +63,18 @@ describe('PAC_910604_WW', () => {
 
         dev.processKeyValue(0x2b3, 550)
         assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 550)
+
+        dev.processKeyValue(0x337, 0)
+        assert.equal(ha.devices[DEVICE_ID].properties['humidity_sensor_mode-'], '운전 중에만')
+        thinq.resetRecorder()
+        ha.setProperty(DEVICE_ID, 'humidity_sensor_mode', 'command', '항상')
+        assert.deepEqual(thinq.outbox, [Buffer.from('01020400000065fd0100050c00000001a140', 'hex')])
+
+        dev.processKeyValue(0x337, 1)
+        assert.equal(ha.devices[DEVICE_ID].properties['humidity_sensor_mode-'], '항상')
+        thinq.resetRecorder()
+        ha.setProperty(DEVICE_ID, 'humidity_sensor_mode', 'command', '운전 중에만')
+        assert.deepEqual(thinq.outbox, [Buffer.from('01020400000065fd0100050c00000000b161', 'hex')])
         dev.drop()
     })
 

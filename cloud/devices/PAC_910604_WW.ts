@@ -13,6 +13,13 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 type PowerModeChangeHook = () => void
 type CheckMode = (arg: number) => boolean
 
+// Live-captured private commands for PAC_910604_WW's humidity-sensor mode.
+// 0 = measure only while the appliance is running, 1 = measure continuously.
+const HUMIDITY_SENSOR_MODE_COMMANDS = {
+    0: Buffer.from('01020400000065fd0100050c00000000b161', 'hex'),
+    1: Buffer.from('01020400000065fd0100050c00000001a140', 'hex'),
+} as const
+
 type EnergyStats = {
     hour: string
     date: string
@@ -393,6 +400,28 @@ export default class Device extends TLVDevice {
                 comp: 'climate',
                 state_topic: 'topic',
                 writable: false,
+            })
+
+            const humiditySensorMode = {
+                platform: 'select',
+                unique_id: '$deviceid-humidity_sensor_mode',
+                name: 'Humidity sensor mode',
+                icon: 'mdi:water-percent',
+                entity_category: 'config',
+                options: ['운전 중에만', '항상'],
+            }
+            config['components']['humidity_sensor_mode'] = humiditySensorMode
+            this.addField(config, {
+                id: 0x337,
+                name: '',
+                comp: 'humidity_sensor_mode',
+                read_xform: (raw) => ({ 0: '운전 중에만', 1: '항상' })[raw],
+                write_xform: (value) => ({ '운전 중에만': 0, 항상: 1 })[value],
+                write_callback: (value) => {
+                    if (value !== 0 && value !== 1) return false
+                    this.thinq.send_packet(HUMIDITY_SENSOR_MODE_COMMANDS[value])
+                    return false
+                },
             })
         }
         this.addField(config, {
