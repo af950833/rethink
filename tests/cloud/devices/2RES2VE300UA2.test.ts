@@ -32,6 +32,8 @@ describe('2RES2VE300UA2', () => {
             'door_open_duration_today',
             'door_open_warning',
             'fresh_air_filter',
+            'smart_care',
+            'night_glare',
             'energy_current_hour',
             'energy_today',
             'energy_month',
@@ -71,6 +73,8 @@ describe('2RES2VE300UA2', () => {
         assert.equal(p.express_freeze, 'OFF')
         assert.equal(p.door, 'OFF')
         assert.equal(p.fresh_air_filter, '스마트 안심 보관 켜짐')
+        assert.equal(p.smart_care, 'ON')
+        assert.equal(p.night_glare, 'OFF')
     })
 
     test('decodes every fresh-air-filter state using the model JSON mapping', () => {
@@ -178,5 +182,30 @@ describe('2RES2VE300UA2', () => {
         thinq.resetRecorder()
         dev.setProperty('express_freeze', 'ON')
         assert.equal(thinq.outbox[0][4 + 3], 2)
+    })
+
+    test('writes the captured Smart Care+ control sequence', () => {
+        const { thinq, dev } = makeDevice()
+
+        dev.setProperty('smart_care', 'ON')
+        assert.equal(thinq.outbox[0][4 + 4], 6)
+
+        thinq.resetRecorder()
+        dev.setProperty('smart_care', 'OFF')
+        assert.equal(thinq.outbox[0][4 + 17], 0)
+    })
+
+    test('writes validated night-glare off and default schedule commands', () => {
+        const { thinq, dev } = makeDevice()
+
+        dev.setProperty('night_glare', 'OFF')
+        assert.equal(hex(thinq.outbox[0]), 'AA16F01002000000000000000000000000001EB5BB')
+
+        thinq.resetRecorder()
+        dev.setProperty('night_glare', 'ON')
+        const body = thinq.outbox[0].subarray(2, -2)
+        assert.equal(body.subarray(0, 4).toString('hex'), 'f0100202')
+        assert.equal(body.subarray(7, 10).toString('hex'), '0c0000')
+        assert.equal(body.subarray(13).toString('hex'), '150000001e')
     })
 })
