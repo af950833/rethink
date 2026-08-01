@@ -6,10 +6,41 @@ import { MockHAConnection, MockThinq2Device, buf, hex } from '@/tests/helpers/mo
 
 const META: Metadata = { modelId: 'Hd0C_F', modelName: 'Hd0C_F', swVersion: '2.10.93' }
 const LIVE_RINSING = buf('aa2120eb001906003201040100010501020000000800000000060002036600fabb')
+const LIVE_FUNCTIONAL_CLOTHING_RUNNING = buf(
+    'aa2120eb001906003201040d00010501020000000800000000060002036600fabb',
+)
+const LIVE_COURSE_SELECTIONS = [
+    [
+        'aa3c20ec001901003400340d0002060102000000000000000100660403660000190100000000100008020102000000c00000000100000603660092bb',
+        '애벌 + 표준',
+    ],
+    [
+        'aa3c20ec00190100000000100008020102000000c0000000010000060366000019010000000004000a020103000000c000000001000008056600eebb',
+        '이불',
+    ],
+    [
+        'aa3c20ec0019010000000004000a020103000000c000000001000008056600001901000000000d0006060102000000c000000001000004036600edbb',
+        '기능성의류',
+    ],
+    [
+        'aa3c20ec001901000000000d0006060102000000c000000001000004036600001901020502050800000003000000000000000001000003036606a9bb',
+        '통세척',
+    ],
+    // The owner confirmed these two displayed numeric codes directly.
+    [
+        'aa3c20ec0019010000000004000a020103000000c000000001000008056600001901000000000c000a020103000000c000000001000008056600eebb',
+        '수건',
+    ],
+    [
+        'aa3c20ec0019010000000004000a020103000000c0000000010000080566000019010000000018000a020103000000c000000001000008056600eebb',
+        '안심 표준',
+    ],
+] as const
 const LIVE_POWER_OFF = buf('aa2120eb0019000110011001000702010200000080000000000200060366005abb')
 const LIVE_FULL_STATUS = buf(
     'aa0020cf002e0101070600230104010200020103050101000080000000006617023a0f4604330200000100000000001c00000000a7bb',
 )
+const LIVE_TUB_CLEAN_COUNT_UPDATE = buf('aa0720d81997bb')
 // Power button pressed with no course selected. The first 0xEC record is the
 // older powered-off state and the second record is the newest Initial state.
 const LIVE_POWER_ON_INITIAL = buf(
@@ -114,6 +145,20 @@ describe('Hd0C_F', () => {
         assert.equal(p.run_completed, 'OFF')
     })
 
+    test('decodes the running Functional Clothing course code', () => {
+        const { ha, thinq } = makeDevice()
+        thinq.emit('data', LIVE_FUNCTIONAL_CLOTHING_RUNNING)
+        assert.equal(ha.devices['washer-id'].properties.course, '기능성의류')
+    })
+
+    test('decodes live course-selection codes', () => {
+        const { ha, thinq } = makeDevice()
+        for (const [frame, course] of LIVE_COURSE_SELECTIONS) {
+            thinq.emit('data', buf(frame))
+            assert.equal(ha.devices['washer-id'].properties.course, course)
+        }
+    })
+
     test('uses the second 0xEC record as the newest state', () => {
         const { ha, thinq } = makeDevice()
         thinq.emit('data', LIVE_POWER_ON_INITIAL)
@@ -129,6 +174,13 @@ describe('Hd0C_F', () => {
         const { ha, thinq } = makeDevice()
         thinq.emit('data', LIVE_FULL_STATUS)
         assert.equal(ha.devices['washer-id'].properties.tub_clean_count, 23)
+    })
+
+    test('updates TCLCount from the compact completion notification', () => {
+        const { ha, thinq } = makeDevice()
+        thinq.emit('data', LIVE_FULL_STATUS)
+        thinq.emit('data', LIVE_TUB_CLEAN_COUNT_UPDATE)
+        assert.equal(ha.devices['washer-id'].properties.tub_clean_count, 25)
     })
 
     test('hides stale course, spin and water level while powered off', () => {

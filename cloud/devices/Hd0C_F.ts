@@ -28,11 +28,11 @@ const COURSE: Record<number, string> = {
     0x02: '울/섬세',
     0x03: '급속',
     0x04: '이불',
-    0x05: '통세척',
-    0x06: '수건',
-    0x07: '기능성의류',
-    0x08: '애벌 + 표준',
-    0x09: '안심 표준',
+    0x08: '통세척',
+    0x0c: '수건',
+    0x0d: '기능성의류',
+    0x10: '애벌 + 표준',
+    0x18: '안심 표준',
 }
 
 const WASH: Record<number, string> = {
@@ -252,6 +252,10 @@ export default class Device extends AABBDevice {
         // is TCLCount (washes since the last tub-clean cycle); live value 0x17
         // matched the ThinQ2 snapshot's TCLCount=23 exactly.
         else if (buf[1] === 0xcf && buf.length === 50) this.publishProperty('tub_clean_count', buf[29])
+        // A qualifying cycle (including the final spin) sends a compact absolute
+        // TCLCount update immediately before Complete. Captured 20 D8 19 when
+        // ThinQ changed to 25; incomplete cycles do not send this notification.
+        else if (buf[1] === 0xd8 && buf.length === 3) this.publishProperty('tub_clean_count', buf[2])
     }
 
     setProperty(prop: string, mqttValue: string) {
