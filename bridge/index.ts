@@ -99,12 +99,14 @@ class BridgedDevice {
 type BridgeEvents = {
     loggedIn: () => void
     loggedOut: () => void
+    deviceNamesChanged: () => void
     started: (id: string) => void
     stopped: (id: string) => void
 }
 
 export class Bridge extends TypedEmitter<BridgeEvents> {
     bridgedDevices = new Map<string, BridgedDevice>()
+    deviceNames = new Map<string, string>()
 
     constructor(
         readonly state: BridgeState,
@@ -115,6 +117,7 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
         this.manager.on('newDevice', this.#start.bind(this))
         this.manager.on('dropDevice', this.#stop.bind(this))
         Object.values(this.manager.allDevices).forEach(this.#start.bind(this))
+        void this.refreshDeviceNames()
     }
 
     #start(dev: AnyDevice) {
@@ -142,6 +145,35 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
         if (this.bridgedDevices.has(id)) return true
 
         return false
+    }
+
+    name(id: string) {
+        return this.deviceNames.get(id)
+    }
+
+    async refreshDeviceNames() {
+        const creds = this.state.getCredentials()
+        if (!creds) {
+            if (this.deviceNames.size) {
+                this.deviceNames.clear()
+                this.emit('deviceNamesChanged')
+            }
+            return
+        }
+
+        try {
+            const client = new ThinqClient(creds.env)
+            await client.auth(creds.refreshToken)
+            const names = new Map(
+                (await client.listDevices())
+                    .filter((device) => device.alias)
+                    .map((device) => [device.deviceId, device.alias]),
+            )
+            this.deviceNames = names
+            this.emit('deviceNamesChanged')
+        } catch (err) {
+            console.warn('Unable to load LG ThinQ device names', err)
+        }
     }
 
     async enable(id: string, devType?: string, statusCallback?: StatusCallback) {
@@ -188,6 +220,7 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
                 env,
                 refreshToken: token.refreshToken,
             })
+            await this.refreshDeviceNames()
             this.emit('loggedIn')
             return true
         } catch (err) {
@@ -197,6 +230,8 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
 
     logout() {
         this.state.setCredentials(undefined)
+        this.deviceNames.clear()
+        this.emit('deviceNamesChanged')
         // FIXME? drop all devices
         this.emit('loggedOut')
     }

@@ -60,6 +60,10 @@ class DeviceEntry {
         children.push(td)
 
         td = document.createElement('td')
+        td.innerText = this.remoteState.name || '-'
+        children.push(td)
+
+        td = document.createElement('td')
         let model = this.remoteState.model
         if (!this.remoteState.mapped) {
             model += ` <i class="material-icons tooltipped tiny" data-position="bottom" data-tooltip="This device is not supported by rethink. It will not be mapped to HomeAssistant">warning</i>`

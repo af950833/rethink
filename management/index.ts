@@ -63,7 +63,9 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
         for (const id in manager.allDevices) {
             const dev = manager.allDevices[id]
             const meta = dev.meta
+            const haName = ha.haDevices.get(id)?.config?.device?.name
             allDevices[id] = {
+                name: bridge?.name(id) || haName || meta.modelName,
                 model: meta.modelId,
                 deviceType: meta.deviceType,
                 platform: dev.platform,
@@ -153,6 +155,7 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
 
         bridge.on('loggedIn', refreshBridgeStatus)
         bridge.on('loggedOut', refreshBridgeStatus)
+        bridge.on('deviceNamesChanged', refreshDevices)
         bridge.on('started', refreshDevices)
         bridge.on('stopped', refreshDevices)
     }
