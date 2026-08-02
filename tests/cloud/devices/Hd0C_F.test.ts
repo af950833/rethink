@@ -135,7 +135,7 @@ describe('Hd0C_F', () => {
         assert.equal(p.initial_time, '1:04:00')
         assert.equal(p.reserve_time, '0:00:00')
         assert.equal(p.wash, '3분')
-        assert.equal(p.spin, '맞춤건조')
+        assert.equal(p.spin, '건조맞춤')
         assert.equal(p.water_temp, '냉수')
         assert.equal(p.rinse, '2회')
         assert.equal(p.water_level, 3)
