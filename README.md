@@ -5,13 +5,16 @@ LG ThinQ 가전과 로컬 네트워크에서 통신하고, 가전 프로토콜�
 이 저장소는 [anszom/rethink](https://github.com/anszom/rethink)를 기반으로 한 Fork입니다. 원작자의 로컬 제어 및 bridge 기능에 다음 기능을 추가했습니다.
 
 - 공유기 DNAT 환경에서 여러 LG 호스트명을 처리하는 SNI별 TLS 인증서
-- 기존 ThinQ2 기기를 LG 계정에서 삭제하거나 재등록하지 않는 보존 모드
-- 기존 LG 앱, Google Home, Home Assistant 연동을 유지하기 위한 안전장치
+- 기존 ThinQ2 기기의 LG ThinQ Home 등록과 별칭을 다시 만들지 않는 보존 모드
+- bridge를 사용하는 동안 기존 LG 앱, Google Home, Home Assistant 연동을 유지하기 위한 안전장치
 - ThinQ2 클라우드 ACK를 원본 JSON 그대로 기기에 전달하는 브리지 수정
 
 > [!WARNING]
 > 이 Fork의 추가 기능은 실험적입니다. 실제 가전에 적용하기 전에 테스트 IP와 한 대의 기기로 충분히 검증하세요. LG 계정, 가전 등록, 네트워크 연결에 영향을 줄 수 있으며 어떠한 보증도 제공하지 않습니다.
-> Rethink를 사용하지 않고 LG 클라우드로 직접 연결하는 원복을 위해서는 기기 재등록이 필요합니다. 이 저장소는 Rethink 에 추가시 재등록 과정이 없는 편의만 제공됩니다.
+>
+> `bridge.preserve_existing_devices: true`는 bridge 활성화 과정에서 기존 LG ThinQ Home 등록, 기기 별칭 및 외부 연동을 삭제하거나 다시 만들지 않도록 보호합니다. 원래 기기가 LG 클라우드에 직접 접속할 때 사용하는 인증 자격까지 보존하는 옵션은 아닙니다.
+>
+> `PAC_910604_WW`에서 확인한 결과, Rethink용 bridge 인증서가 발급된 후에는 bridge를 끄고 DNAT를 제거하더라도 원래 기기가 LG 클라우드에 직접 복귀하지 못했습니다. Rethink를 완전히 해제하려면 LG ThinQ 앱에서 해당 기기의 Wi-Fi 등록을 다시 진행해야 합니다. 다른 ThinQ2 모델에서도 같은 현상이 발생할 수 있습니다.
 
 ## 동작 구조
 
@@ -62,6 +65,8 @@ CA 개인키는 매우 민감합니다. `ca.key`를 공개 저장소, 로그 또
 - 이미 등록된 기기는 기존 등록과 별칭을 유지합니다.
 - “이미 등록됨” 오류가 발생해도 현재 Home에서 동일 기기가 확인된 경우에만 정상 처리합니다.
 - 보존 모드에서는 `initDevice: true`로 재시도하지 않습니다.
+
+이 기능이 보존하는 대상은 **LG ThinQ Home의 기존 기기 등록과 별칭**입니다. Rethink가 LG 클라우드에 접속하기 위한 별도 bridge 인증서를 발급받은 뒤에도 원래 기기의 클라우드 직접 접속 인증 자격이 유지된다는 의미는 아닙니다. 따라서 보존 모드를 사용하더라도 Rethink를 완전히 제거하여 직접 연결로 돌아갈 때는 기기의 ThinQ Wi-Fi 재등록이 필요할 수 있습니다.
 
 활성화 설정:
 
@@ -202,7 +207,7 @@ nano ~/docker/rethink-data/config.json
 - `https_port.advertise`: LG 기기에 안내할 원래 HTTPS 포트. `443`
 - `management_port`: 웹 관리 화면 포트. 이 안내에서는 `44401`
 - `bridge.storage_path`: 인증서와 bridge 상태를 보관할 위치. 데이터 폴더 내부의 `./state`
-- `bridge.preserve_existing_devices`: 기존 LG ThinQ 앱 등록을 유지하려면 `true`
+- `bridge.preserve_existing_devices`: bridge 사용 중 기존 LG ThinQ Home 등록과 별칭을 유지하려면 `true`. 이 옵션은 완전 원복 시 Wi-Fi 재등록을 생략하게 해 주는 옵션이 아닙니다.
 
 DNAT 예시에서 TCP 443을 컨테이너의 TCP 4433으로 전달한다면 다음처럼 bind 포트와 기기에 알릴 포트를 나눕니다.
 
@@ -295,7 +300,7 @@ docker logs --tail 200 rethink
 
 컨테이너 상태가 계속 `Restarting`이면 DNAT를 적용하지 말고 `config.json` 문법, 포트 충돌 및 데이터 폴더 권한부터 해결하세요.
 
-기존 LG ThinQ 앱의 기기 등록을 유지하려면 DNAT를 적용하기 전에 `~/docker/rethink-data/config.json`의 `bridge.preserve_existing_devices`가 `true`인지 확인하세요.
+bridge 사용 중 기존 LG ThinQ Home의 기기 등록과 별칭을 유지하려면 DNAT를 적용하기 전에 `~/docker/rethink-data/config.json`의 `bridge.preserve_existing_devices`가 `true`인지 확인하세요. 이 설정은 원래 기기의 클라우드 직접 접속 인증 자격까지 보존하지는 않습니다.
 
 관리 화면에서 bridge 로그인은 다음 순서로 진행합니다.
 
@@ -423,6 +428,8 @@ ASUS 순정 펌웨어에서는 공유기 재부팅이나 방화벽 재시작 후
 4. 각 기기 IP에 대해 4-4의 conntrack 명령을 실행합니다.
 5. rethink 관리 화면과 Home Assistant에서 기기가 다시 연결되는지 확인합니다.
 
+이 상황은 Rethink를 제거하는 원복이 아닙니다. 컨테이너의 데이터 볼륨과 bridge 상태를 그대로 유지하고, 관리 화면에서 bridge를 끄거나 `state/`의 기기 파일을 삭제하지 마세요. DNAT만 복구하면 되므로 LG ThinQ 앱에서 기기를 재등록할 필요가 없습니다.
+
 기존 규칙이 남아 있는데 DNAT 명령을 다시 실행하면 중복 규칙이 생깁니다. 반드시 현재 규칙을 먼저 확인하세요.
 
 재부팅 후에도 규칙을 자동으로 유지하려면 공유기가 지원하는 경우 **Asuswrt-Merlin** 또는 **OpenWrt** 같은 커스텀 펌웨어를 사용할 수 있습니다.
@@ -481,15 +488,30 @@ docker run -d \
 
 가능하면 미사용 테스트 IP로 DNAT 명령을 먼저 검증하세요.
 
-## 8. 필수 원복 순서
+## 8. 복구와 원복
 
-원복 순서는 반드시 다음과 같아야 합니다.
+공유기 재부팅 등으로 DNAT 규칙만 사라진 경우와 Rethink를 완전히 제거하는 경우는 절차가 다릅니다.
 
-1. rethink에서 해당 기기의 bridge를 비활성화합니다.
-2. bridge 연결이 종료된 것을 로그에서 확인합니다.
+| 상황 | 필요한 작업 | ThinQ Wi-Fi 재등록 |
+|---|---|---|
+| Rethink를 계속 사용하지만 DNAT만 사라짐 | bridge와 데이터 볼륨을 유지한 채 DNAT 재적용 후 conntrack 삭제 | 필요 없음 |
+| Rethink를 완전히 제거하고 LG 클라우드 직접 연결로 복귀 | bridge 종료 확인, DNAT 제거, conntrack 삭제, 기기 Wi-Fi 재등록 | 필요 |
+
+### 8-1. Rethink를 계속 사용하는 경우
+
+관리 화면에서 bridge를 끄거나 `state/device_<기기 ID>.json`을 삭제하지 마세요. 공유기의 DNAT 규칙만 다시 적용하고 해당 기기의 443/8883 conntrack을 삭제합니다. 저장된 bridge 인증서와 상태를 그대로 사용하므로 LG ThinQ 앱에서 기기를 재등록할 필요가 없습니다.
+
+### 8-2. Rethink를 완전히 제거하는 경우
+
+영구 원복 순서는 반드시 다음과 같아야 합니다.
+
+1. rethink 관리 화면에서 해당 기기의 bridge를 비활성화합니다.
+2. 화면 표시만 확인하지 말고, rethink 로그에서 해당 기기의 LG 클라우드 bridge 연결이 실제로 종료되었는지 확인합니다.
 3. 공유기에서 정확히 일치하는 DNAT 규칙만 제거합니다.
 4. 해당 기기의 443/8883 conntrack만 삭제하거나 자연스러운 재접속을 기다립니다.
-5. LG thinq 앱에서 기기를 삭제하고 재등록 작업을 합니다.
+5. 기기를 Wi-Fi 설정 모드로 전환하여 LG ThinQ 앱에서 다시 등록합니다. 기존 오프라인 항목을 먼저 삭제할지는 앱의 안내에 따릅니다.
+
+기존 오프라인 기기를 LG ThinQ 앱에서 삭제하면 방 배치, 별칭, Home Assistant 또는 Google Home 연동이 변경될 수 있으므로 재등록 전에 현재 설정을 확인하세요.
 
 공유기에서 기기 한 대의 규칙만 제거하는 예:
 
@@ -501,6 +523,8 @@ docker run -d \
 ```
 
 bridge를 켜 둔 채 DNAT만 제거하면 rethink와 실제 가전이 같은 MQTT client ID로 LG 클라우드에 접속하면서 서로 연결을 끊을 수 있습니다.
+
+다만 bridge를 먼저 끄더라도 원래 기기의 직접 클라우드 연결이 자동으로 복구된다는 의미는 아닙니다. `PAC_910604_WW`에서는 중복 MQTT client ID 연결, upstream MQTT 연결 및 추가 등록 작업 없이 Rethink용 bridge 인증서만 발급한 분리 실험에서도 직접 복귀가 실패했습니다. LG 서버가 원래 인증 자격을 어떻게 처리했는지는 직접 확인할 수 없으므로 정확한 서버 내부 원인은 단정하지 않지만, 영구 원복에는 ThinQ Wi-Fi 재등록이 필요했습니다.
 
 
 ## 운영 데이터와 보안
@@ -524,6 +548,8 @@ data/
 특히 `state/`에는 LG bridge 연결에 사용하는 기기 인증서와 개인키가 포함될 수 있습니다.
 
 컨테이너를 다시 만들 때도 항상 동일한 `-v "$HOME/docker/rethink-data:/app/data"` 옵션을 사용하세요. 호스트의 `~/docker/rethink-data` 폴더를 삭제하면 CA 및 bridge 상태를 잃을 수 있습니다.
+
+Rethink를 계속 사용할 계획이라면 공유기 재부팅이나 일시적인 통신 장애를 해결하기 위해 bridge를 끄거나 `state/` 파일을 삭제하지 마세요. bridge를 다시 활성화하는 과정에서 새 인증서가 발급될 수 있습니다. `state/`는 지속적으로 보존하되 개인키가 포함되어 있으므로 공개 저장소나 공유 백업 공간에는 저장하지 마세요.
 
 ## 관리 화면과 도구
 
