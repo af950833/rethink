@@ -193,58 +193,6 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
         return true
     }
 
-    /**
-     * Diagnostic-only ThinQ2 pairing path.
-     *
-     * This deliberately stops after LG issues the bridge certificate. It does
-     * not create a BridgedDevice, open an upstream MQTT connection, publish
-     * preDeploy, or modify the existing Home registration. This lets us test
-     * whether certificate issuance alone affects the physical appliance's
-     * original cloud credentials.
-     */
-    async pairOnly(id: string, statusCallback?: StatusCallback) {
-        if (!statusCallback) statusCallback = () => {}
-        if (!this.isLoggedIn()) return false
-        if (!this.options.preserveExistingDevices) {
-            throw new Error('Pair-only diagnostics require preserve_existing_devices=true')
-        }
-        if (this.bridgedDevices.has(id)) {
-            throw new Error('Disable the active bridge before running pair-only diagnostics')
-        }
-
-        const dev = this.manager.allDevices[id]
-        if (!dev) return false
-        if (dev.platform !== 'thinq2') throw new Error('Pair-only diagnostics support ThinQ2 devices only')
-
-        const creds = this.state.getCredentials()
-        if (!creds) return false
-
-        const client = new ThinqClient(creds.env)
-        await client.auth(creds.refreshToken)
-
-        statusCallback('Checking existing device registration')
-        const existingDevice = (await client.listDevices()).find((item) => item.deviceId === dev.id)
-        if (!existingDevice) {
-            throw new Error('Pair-only refused: the device is not registered in the current LG Home')
-        }
-
-        statusCallback('Fetching otp key')
-        const otp = await client.prepareNewT2Device()
-        const t2 = new Thinq2Device(dev.id, dev.meta)
-
-        statusCallback('Pairing only (no cloud MQTT connection)')
-        try {
-            await t2.pair(client.env, otp)
-        } catch (err) {
-            statusCallback('Pairing failed. Make sure that common.lgthinq.com is not redirected')
-            throw err
-        }
-
-        this.state.setDeviceState(dev.id, t2.state)
-        statusCallback(`Pair-only certificate saved (${existingDevice.alias})`)
-        return true
-    }
-
     disable(id: string) {
         this.state.setDeviceState(id, undefined)
         this.#stop(id)

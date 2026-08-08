@@ -149,23 +149,6 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
             }),
         )
 
-        app.post(
-            '/bridge/:deviceId/pair-only',
-            asyncHandler(async (req, res) => {
-                const deviceId = req.params.deviceId
-                if (Array.isArray(deviceId)) {
-                    res.status(400).end('Invalid deviceId')
-                    return
-                }
-                try {
-                    if (await bridge.pairOnly(deviceId, statusReport)) res.status(204).end()
-                    else res.status(400).end()
-                } catch (err) {
-                    res.status(500).end(`${err}`)
-                }
-            }),
-        )
-
         function refreshBridgeStatus() {
             broadcast({ bridge: bridgeStatus() })
         }
