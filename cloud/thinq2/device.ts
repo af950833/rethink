@@ -39,6 +39,7 @@ export class Device extends TypedEmitter<DeviceEvents> {
         readonly topic: string,
         readonly id: string,
         readonly meta: Metadata,
+        readonly sourceIp?: string,
     ) {
         super()
     }
@@ -171,7 +172,7 @@ export class DeviceAcceptor extends TypedEmitter<DeviceAcceptorEvents> {
             deviceType: client.deployMsg.data?.appInfo?.DeviceType,
         }
 
-        const dev = new Device(this.broker, 'lime/devices/' + deviceId, deviceId, meta)
+        const dev = new Device(this.broker, 'lime/devices/' + deviceId, deviceId, meta, client.remoteAddress)
         client.deviceObj = dev
         this.emit('newDevice', dev)
     }

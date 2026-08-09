@@ -28,7 +28,11 @@ export class Client extends TypedEmitter<ClientEvents> {
     mqtt: any = undefined
     will: LWT
 
-    constructor(mqtt: MqttConnection, retainMap: Map<string, PublishPacket>) {
+    constructor(
+        mqtt: MqttConnection,
+        retainMap: Map<string, PublishPacket>,
+        readonly remoteAddress?: string,
+    ) {
         super()
 
         this.mqtt = mqtt
@@ -142,7 +146,7 @@ export class Broker extends TypedEmitter<BrokerEvents> {
 
     accept(stream: Socket) {
         const mqtt = newMqttConnection(stream)
-        const client = new Client(mqtt, this.retainMap)
+        const client = new Client(mqtt, this.retainMap, stream.remoteAddress?.replace(/^::ffff:/, ''))
 
         mqtt.on('publish', (packet) => {
             this.publish(packet, client)

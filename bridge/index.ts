@@ -147,6 +147,10 @@ export class Bridge extends TypedEmitter<BridgeEvents> {
         return false
     }
 
+    hasSavedState(id: string) {
+        return !!this.state.getDeviceState(id)
+    }
+
     name(id: string) {
         return this.deviceNames.get(id)
     }

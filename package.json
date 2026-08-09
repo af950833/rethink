@@ -6,6 +6,7 @@
     "mqtt": "^5.3.0",
     "mqtt-connection": "^4.1.0",
     "node-fetch": "^3.3.2",
+    "ssh2": "^1.17.0",
     "strip-json-comments": "^5.0.3",
     "tiny-typed-emitter": "^2.1.0",
     "websocket-express": "^4.0.1",

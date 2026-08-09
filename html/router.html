@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+    <head>
+        <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <style>
+            .preloader-wrapper.verysmall { width: 24px; height: 24px; }
+            .state-partial { color: #ff9800; font-weight: 600; }
+            .state-unknown { color: #9e9e9e; }
+            td.actions { white-space: nowrap; }
+            .switch.busy { opacity: 0.45; pointer-events: none; }
+            .subtle { color: #757575; font-size: 0.9em; }
+            .router-settings-row {
+                display: grid;
+                grid-template-columns: minmax(150px, 2fr) 90px minmax(140px, 1.4fr) minmax(160px, 1.6fr) minmax(150px, 2fr);
+                gap: 0 18px;
+                align-items: end;
+            }
+            .router-settings-row .input-field { margin-bottom: 0; }
+            .password-field input { padding-right: 42px; box-sizing: border-box; }
+            .password-toggle {
+                position: absolute;
+                right: 0;
+                bottom: 9px;
+                width: 36px;
+                height: 36px;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                color: #757575;
+                cursor: pointer;
+            }
+            .password-toggle:focus { outline: 2px solid #26a69a; outline-offset: -2px; }
+            @media (max-width: 900px) {
+                .router-settings-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+            @media (max-width: 600px) {
+                .router-settings-row { grid-template-columns: 1fr; }
+            }
+        </style>
+    </head>
+    <body>
+        <nav class="light-blue lighten-1" role="navigation">
+            <div class="nav-wrapper container">
+                <a href="./" class="brand-logo">
+                    <span class="material-icons">router</span>
+                    Asus Router DNAT Management
+                </a>
+                <ul class="right hide-on-med-and-down"><li><a href="./">Rethink Management Panel</a></li></ul>
+            </div>
+        </nav>
+
+        <main class="container">
+            <div class="section">
+                <h4 class="header orange-text">Router SSH settings</h4>
+                <div class="router-settings-row">
+                    <div class="input-field"><input id="router_host" type="text" /><label for="router_host">Router IP</label></div>
+                    <div class="input-field"><input id="router_port" type="number" value="22" /><label for="router_port">SSH Port</label></div>
+                    <div class="input-field"><input id="router_username" type="text" /><label for="router_username">Username</label></div>
+                    <div class="input-field password-field">
+                        <input id="router_password" type="password" />
+                        <label for="router_password">Password</label>
+                        <button id="toggle_router_password" class="password-toggle" type="button" title="Show password" aria-label="Show password" aria-pressed="false">
+                            <i class="material-icons">visibility</i>
+                        </button>
+                    </div>
+                    <div class="input-field"><input id="rethink_ip" type="text" /><label for="rethink_ip">Rethink IP</label></div>
+                </div>
+                <button id="test_router" class="btn waves-effect waves-light">Test connection</button>
+                <button id="save_router" class="btn waves-effect waves-light">Save</button>
+            </div>
+
+            <div class="divider"></div>
+            <div class="section">
+                <div class="row valign-wrapper">
+                    <div class="col s9">
+                        <h4 class="header orange-text">DNAT devices</h4>
+                        Router: <span id="router_status" class="state-unknown">Not configured</span>
+                        <span id="router_error" class="red-text"></span>
+                    </div>
+                    <div class="col s3 right-align">
+                        <button id="refresh" class="btn waves-effect waves-light">
+                            Refresh <i class="material-icons right">refresh</i>
+                        </button>
+                    </div>
+                </div>
+
+                <table class="highlight responsive-table">
+                    <thead><tr><th>Name</th><th>IP</th><th>Device</th><th>DNAT</th><th>Bridge</th><th>Action</th></tr></thead>
+                    <tbody id="device_rows"></tbody>
+                </table>
+                <p id="empty_devices" class="subtle">No devices registered. Add an IP address first.</p>
+                <button id="add_device" class="btn waves-effect waves-light modal-trigger" data-target="device_modal">
+                    Add device <i class="material-icons right">add</i>
+                </button>
+            </div>
+        </main>
+
+        <div id="device_modal" class="modal">
+            <div class="modal-content">
+                <h4>Add device</h4>
+                <div class="input-field"><input id="device_ip" type="text" /><label for="device_ip">Device IP</label></div>
+                <p class="subtle">The name and ThinQ device ID will be detected after DNAT is enabled.</p>
+            </div>
+            <div class="modal-footer">
+                <a href="#!" class="modal-close btn-flat">Cancel</a>
+                <button id="save_device" class="btn waves-effect waves-light">Add</button>
+            </div>
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+        <script src="router.js"></script>
+    </body>
+</html>

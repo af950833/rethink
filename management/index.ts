@@ -10,8 +10,9 @@ import { Bridge } from '@/bridge'
 import { Request, Response } from 'express'
 import { Device as T1Device } from '@/cloud/thinq1/device'
 import { Device as T2Device } from '@/cloud/thinq2/device'
+import { RouterAPI } from './router-api'
 
-export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | undefined) {
+export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | undefined, routerConfigPath: string) {
     const app = new WebSocketExpress()
     let subscribers: ExtendedWebSocket[] = []
 
@@ -32,6 +33,9 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
         next()
     })
     app.use(WebSocketExpress.json())
+
+    const routerApi = new RouterAPI(routerConfigPath, ha, manager, bridge)
+    routerApi.register(app)
 
     const currentDir = path.dirname(fileURLToPath(import.meta.url))
     app.ws('/ws', (req, res, next) => {
@@ -69,6 +73,7 @@ export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | unde
                 model: meta.modelId,
                 deviceType: meta.deviceType,
                 platform: dev.platform,
+                sourceIp: 'sourceIp' in dev ? dev.sourceIp : undefined,
                 mapped: ha.haDevices.has(id),
                 bridged: bridge ? bridge.status(id) : false,
             }

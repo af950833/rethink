@@ -8,6 +8,7 @@ LG ThinQ 가전과 로컬 네트워크에서 통신하고, 가전 프로토콜�
 - 기존 ThinQ2 기기의 LG ThinQ Home 등록과 별칭을 다시 만들지 않는 보존 모드
 - bridge를 사용하는 동안 기존 LG 앱, Google Home, Home Assistant 연동을 유지하기 위한 안전장치
 - ThinQ2 클라우드 ACK를 원본 JSON 그대로 기기에 전달하는 브리지 수정
+- ASUS 공유기의 DNAT 규칙과 conntrack을 SSH로 관리하는 웹 화면
 
 > [!WARNING]
 > 이 Fork의 추가 기능은 실험적입니다. 실제 가전에 적용하기 전에 테스트 IP와 한 대의 기기로 충분히 검증하세요. LG 계정, 가전 등록, 네트워크 연결에 영향을 줄 수 있으며 어떠한 보증도 제공하지 않습니다.
@@ -120,10 +121,11 @@ LG 기기 ← rethink ← LG 클라우드
 1. rethink 서버와 LG 기기의 IP를 고정합니다.
 2. Ubuntu 서버에 저장소를 받고 운영 데이터 폴더를 준비합니다.
 3. `config.json`을 작성하고 Docker 이미지를 빌드·실행합니다.
-4. rethink 관리 화면에서 LG 계정 로그인과 bridge 설정을 마칩니다.
-5. ASUS 공유기에서 한 대의 LG 기기에만 DNAT를 시험 적용합니다.
-6. 동작을 확인한 뒤 나머지 기기를 추가합니다.
-7. Home Assistant에서 MQTT 엔티티를 확인합니다.
+4. rethink 관리 화면에서 LG 계정 로그인을 마칩니다.
+5. DNAT 관리 화면에 공유기 SSH 정보를 저장하고 한 대의 LG 기기에만 DNAT를 시험 적용합니다.
+6. 감지된 기기를 등록한 IP에 연결한 뒤 Bridge를 켭니다.
+7. 동작을 확인한 뒤 나머지 기기를 추가합니다.
+8. Home Assistant에서 MQTT 엔티티를 확인합니다.
 
 처음부터 여러 기기에 동시에 DNAT를 적용하지 마세요. 한 대로 인증서, bridge 및 Home Assistant 제어가 정상인지 확인한 뒤 범위를 넓히는 것이 안전합니다.
 
@@ -186,6 +188,7 @@ cp config.jsonc ~/docker/rethink-data/config.json
     ├── config.json   # 사용자가 수정
     ├── ca.key        # 최초 실행 시 자동 생성
     ├── ca.cert       # 최초 실행 시 자동 생성
+    ├── router-dnat.json # DNAT 관리 화면의 공유기 및 기기 설정
     └── state/        # bridge 설정 과정에서 자동 생성
 ```
 
@@ -315,31 +318,74 @@ URL의 일부만 복사하거나 로그인 전 주소를 붙여넣으면 인증�
 
 DNAT 적용 전에는 Connected devices에 기기가 보이지 않는 것이 정상일 수 있습니다.
 
-## 4. ASUS 공유기 최초 설정
+## 4. ASUS Router DNAT Management
 
-다음 절차는 ASUSWRT 순정 펌웨어 기준입니다. 펌웨어 버전에 따라 메뉴 이름이 조금 다를 수 있습니다.
+다음 절차는 `iptables`와 `conntrack`이 포함된 ASUSWRT 순정 펌웨어를 기준으로 합니다. 이 Fork는 관리 화면에서 공유기에 SSH로 접속하여 기기별 DNAT 상태를 조회하고 적용·해제할 수 있습니다. 공유기 전체 NAT 테이블을 초기화하지 않으며, 관리 대상 IP의 TCP 443과 8883 규칙만 다룹니다.
 
-### 4-1. 공유기에 SSH로 접속
+### 4-1. 공유기 SSH 준비
 
-ASUS 공유기 Web GUI에서 SSH를 **LAN only(LAN 전용)**로 활성화한 다음 PC 또는 Ubuntu 서버에서 공유기에 접속합니다.
+ASUS 공유기 Web GUI에서 SSH를 **LAN only(LAN 전용)**로 활성화합니다. WAN SSH는 허용하지 마세요. PC에서 다음 명령으로 로그인이 되는지 먼저 확인합니다.
 
 ```sh
 ssh ROUTER_ADMIN@192.168.0.1
 ```
 
-`ROUTER_ADMIN`은 자신의 ASUS 공유기 관리자 계정으로 바꾸세요. WAN에서도 SSH를 허용하지 마세요.
+공유기에서 다음 두 도구도 확인합니다.
+
+```sh
+/usr/sbin/iptables --version
+/usr/sbin/conntrack -V
+```
 
 공식 참고 문서: [ASUS 공유기 SSH 활성화 안내](https://www.asus.com/global/support/faq/1048201/)
 
-### 4-2. 기존 NAT 규칙 확인
+### 4-2. DNAT 관리 화면 열기
 
-공유기에 SSH로 접속한 뒤 현재 규칙을 먼저 확인하고 별도로 보관합니다.
+기본 Rethink 관리 화면 오른쪽 위의 **Asus Router DNAT Management**를 누르거나 다음 주소를 직접 엽니다.
 
-```sh
-/usr/sbin/iptables -t nat -S PREROUTING
+```text
+http://RETHINK_SERVER_IP:44401/router.html
 ```
 
-다음 명령은 이 프로젝트에서 절대로 사용하지 마세요.
+페이지 상단의 **Router SSH settings**에 다음 값을 입력합니다.
+
+| 항목 | 설명 |
+| --- | --- |
+| Router IP | ASUS 공유기의 LAN IP. 예: `192.168.0.1` |
+| SSH Port | 공유기 SSH 포트. 기본값은 `22` |
+| Username | ASUS 공유기 관리자 계정 |
+| Password | 공유기 SSH 암호. 눈 모양 버튼은 새로 입력한 값만 표시·숨김 |
+| Rethink IP | rethink 컨테이너가 host network로 사용하는 Ubuntu 서버 IP. 예: `192.168.0.4` |
+
+**Test connection**으로 `iptables`와 `conntrack` 실행 가능 여부를 확인한 다음 **Save**를 누릅니다. 암호 입력란이 비어 있으면 이전에 저장한 암호를 유지합니다. 저장된 암호를 웹 화면으로 다시 보내지는 않습니다.
+
+설정은 컨테이너의 `/app/data/router-dnat.json`, 호스트의 `~/docker/rethink-data/router-dnat.json`에 저장되며 파일 권한은 `600`입니다. 이 파일은 암호를 포함하므로 Git에 추가하거나 외부에 공유하지 마세요.
+
+### 4-3. 한 대의 기기 IP 등록
+
+처음에는 DNAT 목록이 비어 있습니다. **Add device**를 누르고 시험할 LG 기기의 고정 IP만 입력합니다. 이름은 입력하지 않습니다. 이 문서의 에어컨 예시는 `192.168.0.45`입니다.
+
+등록 직후에는 다음처럼 표시됩니다.
+
+- Name: `-`
+- IP: 사용자가 입력한 실제 LG 기기 IP
+- Device: `Waiting for connection` 또는 감지된 기기 선택 목록
+- DNAT: `Off`
+- Bridge: 기기 연결 전에는 `Disabled`
+
+### 4-4. DNAT 켜기
+
+등록한 행의 **DNAT** 스위치를 `On`으로 바꿉니다. 관리 기능은 다음 작업을 순서대로 수행합니다.
+
+1. `RETHINK_DNAT` 전용 NAT 체인이 없으면 생성합니다.
+2. `PREROUTING`에서 전용 체인으로 들어가는 jump 규칙이 없으면 한 번만 추가합니다.
+3. 해당 기기의 TCP 443을 rethink TCP 4433으로 전달합니다.
+4. 해당 기기의 TCP 8883을 rethink TCP 8883으로 전달합니다.
+5. 같은 규칙이 이미 있으면 중복으로 추가하지 않습니다.
+6. 해당 기기 IP의 TCP 443·8883 conntrack만 삭제하여 새 경로로 재접속시킵니다.
+7. 두 규칙을 다시 조회하여 모두 존재할 때만 `On`으로 표시합니다.
+
+ASUS의 `GAME_VSERVER`, `VSERVER`, 포트 포워딩 및 다른 기기의 NAT 규칙은 변경하거나 초기화하지 않습니다. 다음 명령은 절대로 사용하지 마세요.
 
 ```text
 iptables -t nat -F
@@ -347,90 +393,95 @@ iptables -t nat -X
 iptables-restore
 ```
 
-위 명령은 ASUS가 만든 포트 포워딩, 게임 가속 및 기타 NAT 체인에 영향을 줄 수 있습니다. rethink 구성은 `PREROUTING`에 출발지 IP가 정확히 일치하는 규칙 두 개만 추가합니다.
+### 4-5. 공유기에서 규칙 확인
 
-### 4-3. 한 대에 DNAT 시험 적용
+관리 화면으로 추가한 개별 규칙은 `PREROUTING`에 직접 표시되지 않고 `RETHINK_DNAT` 전용 체인에 들어갑니다.
 
-아래 예시는 IP가 `192.168.0.45`인 에어컨만 rethink 서버 `192.168.0.4`로 전달합니다. 공유기 SSH 화면에서 두 명령을 그대로 실행합니다.
+```sh
+/usr/sbin/iptables -t nat -S PREROUTING
+/usr/sbin/iptables -t nat -S RETHINK_DNAT
+/usr/sbin/iptables -t nat -L RETHINK_DNAT -n -v --line-numbers
+```
+
+정상이라면 `PREROUTING`에는 다음 jump가 하나만 보입니다.
+
+```text
+-A PREROUTING -j RETHINK_DNAT
+```
+
+에어컨 예시의 실제 규칙은 전용 체인에서 다음처럼 보입니다.
+
+```text
+-A RETHINK_DNAT -s 192.168.0.45/32 -p tcp -m tcp --dport 443 -j DNAT --to-destination 192.168.0.4:4433
+-A RETHINK_DNAT -s 192.168.0.45/32 -p tcp -m tcp --dport 8883 -j DNAT --to-destination 192.168.0.4:8883
+```
+
+이전 버전에서 `PREROUTING`에 직접 추가한 동일 규칙도 상태 조회에서 인식합니다. 해당 행을 `Off`로 바꾸면 전용 체인과 기존 `PREROUTING`에서 정확히 일치하는 그 기기의 규칙만 제거합니다.
+
+### 4-6. 감지된 기기 연결(Link)
+
+DNAT와 conntrack 정리 후 1~2분 기다리면 Device 열에 감지된 LG 기기가 나타납니다. 선택 목록에서 실제 기기를 선택하고 **Link**를 누릅니다.
+
+ASUS의 NAT 처리 방식 때문에 감지 목록에는 기기 IP 대신 공유기 IP가 표시될 수 있습니다. 예를 들어 `Air Conditioner — 192.168.0.1`로 보여도 정상입니다. 왼쪽 IP 열의 `192.168.0.45`가 관리에 사용하는 실제 기기 IP이며, Link해도 이 값이 공유기 IP로 바뀌지 않습니다.
+
+기기가 여러 대라면 한 번에 모두 켜지 말고 한 대씩 다음 순서로 진행하세요.
+
+1. 실제 기기 IP를 Add device로 등록
+2. DNAT `On`
+3. 감지된 모델명과 기기 이름 확인
+4. 해당 기기를 Link
+5. Bridge `On`
+6. LG ThinQ 앱과 Home Assistant 동작 확인
+
+### 4-7. Bridge 켜기와 끄기
+
+Link가 끝나면 DNAT 관리 화면의 Bridge 스위치를 켤 수 있습니다. 이 스위치와 기본 Rethink 관리 화면의 Bridge 스위치는 같은 `enable()`·`disable()` 동작을 사용합니다.
+
+- Bridge `On`: LG 클라우드용 Bridge 인증서를 발급·저장하고 클라우드 중계를 시작합니다.
+- Bridge `Off`: Bridge 연결을 종료하고 저장된 해당 기기의 Bridge 인증서를 삭제합니다.
+- DNAT `Off`: Bridge가 켜져 있으면 거부됩니다. 반드시 `Bridge Off → DNAT Off` 순서로 진행합니다.
+
+Bridge를 활성화하면 rethink의 로컬 MQTT 엔티티와 LG ThinQ 앱을 함께 사용할 수 있습니다. 기기가 보이지 않으면 Bridge를 반복해서 켜기보다 DNAT 상태, `RETHINK_DNAT` 패킷 카운터, conntrack과 rethink 로그를 먼저 확인하세요.
+
+### 4-8. DNAT 끄기와 목록 제거
+
+DNAT `Off`는 해당 IP의 443·8883 규칙을 전용 체인과 기존 직접 규칙에서 제거하고, 해당 conntrack을 정리합니다. ASUS의 다른 NAT 규칙에는 손대지 않습니다.
+
+**Remove**는 DNAT가 `Off`일 때만 사용할 수 있으며, 해당 IP 행을 DNAT 관리 목록에서 삭제합니다. LG ThinQ 기기 등록이나 Home Assistant 엔티티를 삭제하지는 않습니다. 다시 관리하려면 Add device에서 IP를 수동으로 등록해야 합니다.
+
+**Rename**은 DNAT 관리 화면의 표시 이름만 바꿉니다. LG ThinQ 앱이나 Home Assistant의 기기 이름은 변경하지 않습니다. 빈 이름을 저장하면 감지된 이름으로 돌아갑니다.
+
+### 4-9. 공유기 재부팅 후 복구
+
+ASUS 순정 펌웨어에서는 공유기 재부팅이나 방화벽 재시작 후 사용자가 추가한 체인과 DNAT 규칙이 사라질 수 있습니다. DNAT 관리 화면을 새로 열거나 **Refresh**를 누르면 공유기의 실제 규칙을 다시 조회하므로 해당 기기가 `Off`로 표시됩니다.
+
+복구 순서는 다음과 같습니다.
+
+1. DNAT 관리 화면에서 Router 상태가 `Connected`인지 확인합니다.
+2. 규칙이 사라진 기기의 DNAT를 `On`으로 바꿉니다.
+3. 관리 기능이 전용 체인과 기기별 규칙을 중복 없이 다시 만들고 conntrack을 정리합니다.
+4. 1~2분 후 기기와 Bridge가 다시 연결되는지 확인합니다.
+
+공유기 장애로 기기 연결만 끊어진 경우에는 저장된 Bridge 인증서가 삭제되지 않습니다. DNAT가 복구되고 같은 기기가 다시 접속하면 저장된 상태로 Bridge 연결을 재개할 수 있습니다. 사용자가 Bridge 스위치를 직접 `Off`한 경우에는 인증서가 삭제되므로 다음 `On`에서 새로 발급합니다.
+
+이 상황은 Rethink를 제거하는 원복이 아닙니다. 컨테이너의 데이터 볼륨과 Bridge 상태를 그대로 유지하고, 관리 화면에서 Bridge를 끄거나 `state/`의 기기 파일을 삭제하지 마세요. DNAT만 복구하면 되므로 LG ThinQ 앱에서 기기를 재등록할 필요가 없습니다.
+
+### 4-10. 명령어로 직접 적용하는 대체 방법
+
+웹 관리 기능을 사용하지 않을 때만 아래처럼 `PREROUTING`에 직접 추가할 수 있습니다. 웹 관리 방식과 혼용하지 않는 것을 권장합니다.
 
 ```sh
 /usr/sbin/iptables -t nat -I PREROUTING 1 -s 192.168.0.45 -p tcp --dport 443 -j DNAT --to-destination 192.168.0.4:4433
 /usr/sbin/iptables -t nat -I PREROUTING 1 -s 192.168.0.45 -p tcp --dport 8883 -j DNAT --to-destination 192.168.0.4:8883
-```
-
-같은 명령을 반복하면 중복 규칙이 생기므로 실행 전에 다음 명령으로 기존 규칙을 확인하세요.
-
-```sh
-/usr/sbin/iptables -t nat -S PREROUTING
-```
-
-세탁기와 냉장고도 추가하려면 다음 명령을 각각 실행합니다.
-
-```sh
-# 세탁기 192.168.0.17
-/usr/sbin/iptables -t nat -I PREROUTING 1 -s 192.168.0.17 -p tcp --dport 443 -j DNAT --to-destination 192.168.0.4:4433
-/usr/sbin/iptables -t nat -I PREROUTING 1 -s 192.168.0.17 -p tcp --dport 8883 -j DNAT --to-destination 192.168.0.4:8883
-
-# 냉장고 192.168.0.51
-/usr/sbin/iptables -t nat -I PREROUTING 1 -s 192.168.0.51 -p tcp --dport 443 -j DNAT --to-destination 192.168.0.4:4433
-/usr/sbin/iptables -t nat -I PREROUTING 1 -s 192.168.0.51 -p tcp --dport 8883 -j DNAT --to-destination 192.168.0.4:8883
-```
-
-### 4-4. 기존 연결 기록 정리
-
-DNAT 규칙을 처음 추가했어도 이미 연결된 443/8883 세션은 이전 인터넷 경로를 계속 사용할 수 있습니다. 대상 기기와 두 포트로 범위를 제한해 기존 연결만 삭제합니다.
-
-```sh
 /usr/sbin/conntrack -D -s 192.168.0.45 -p tcp --dport 443
 /usr/sbin/conntrack -D -s 192.168.0.45 -p tcp --dport 8883
 ```
 
-공유기에 `conntrack`이 있는지 확인하려면 다음을 실행합니다.
+같은 명령을 반복하면 중복 규칙이 생길 수 있습니다. 웹 관리 기능은 기존 직접 규칙을 인식하지만, 앞으로는 전용 체인에서 일관되게 관리하는 편이 안전합니다.
 
-```sh
-which conntrack
-/usr/sbin/conntrack -V
-```
+### 4-11. 영구 규칙을 지원하는 펌웨어
 
-전체 conntrack 테이블을 비우면 다른 기기의 통신까지 끊길 수 있으므로 사용하지 마세요.
-
-### 4-5. 적용 결과 확인
-
-```sh
-/usr/sbin/iptables -t nat -S PREROUTING
-/usr/sbin/iptables -t nat -L PREROUTING -n -v --line-numbers
-/usr/sbin/conntrack -L -s 192.168.0.45
-```
-
-그다음 Ubuntu 서버에서 rethink 로그를 확인합니다.
-
-```sh
-docker logs -f rethink
-```
-
-DNAT와 conntrack 적용 후 rethink 웹 관리 화면을 열고 1~2분 정도 기다립니다. **Connected devices**에 적용한 LG 기기가 나타나는지 먼저 확인한 다음, 해당 기기의 **Bridge**를 활성화합니다.
-
-Bridge를 활성화하면 rethink가 기기의 통신을 LG ThinQ 클라우드로 전달합니다. 따라서 rethink가 제공하는 로컬 MQTT 엔티티뿐 아니라 LG ThinQ 앱과 기존 Home Assistant의 ThinQ 클라우드 기반 컴포넌트도 함께 사용할 수 있습니다.
-
-기기가 나타나기 전에 Bridge를 먼저 켤 필요는 없습니다. 2분 이상 기다려도 보이지 않으면 Bridge 설정을 반복하기보다 기기 IP, DNAT 규칙, conntrack 삭제 결과와 rethink 로그를 먼저 확인하세요.
-
-세탁기와 냉장고에도 DNAT를 추가했다면 각 IP에 대해 4-4의 conntrack 명령을 실행하고, 기기가 Connected devices에 나타난 뒤 각각 Bridge를 활성화합니다.
-
-### 4-6. 공유기 재부팅 후 재적용
-
-ASUS 순정 펌웨어에서는 공유기 재부팅이나 방화벽 재시작 후 수동으로 추가한 DNAT 규칙이 사라질 수 있습니다.
-
-공유기가 재부팅되면 다음 순서로 다시 적용합니다.
-
-1. SSH로 공유기에 접속합니다.
-2. `/usr/sbin/iptables -t nat -S PREROUTING`으로 규칙이 사라졌는지 확인합니다.
-3. 규칙이 없을 때만 4-3의 기기별 DNAT 명령을 다시 실행합니다.
-4. 각 기기 IP에 대해 4-4의 conntrack 명령을 실행합니다.
-5. rethink 관리 화면과 Home Assistant에서 기기가 다시 연결되는지 확인합니다.
-
-이 상황은 Rethink를 제거하는 원복이 아닙니다. 컨테이너의 데이터 볼륨과 bridge 상태를 그대로 유지하고, 관리 화면에서 bridge를 끄거나 `state/`의 기기 파일을 삭제하지 마세요. DNAT만 복구하면 되므로 LG ThinQ 앱에서 기기를 재등록할 필요가 없습니다.
-
-기존 규칙이 남아 있는데 DNAT 명령을 다시 실행하면 중복 규칙이 생깁니다. 반드시 현재 규칙을 먼저 확인하세요.
+ASUS 순정 펌웨어에서 재부팅 후 자동 복구를 보장하지는 않습니다.
 
 재부팅 후에도 규칙을 자동으로 유지하려면 공유기가 지원하는 경우 **Asuswrt-Merlin** 또는 **OpenWrt** 같은 커스텀 펌웨어를 사용할 수 있습니다.
 
@@ -507,20 +558,22 @@ docker run -d \
 
 1. rethink 관리 화면에서 해당 기기의 bridge를 비활성화합니다.
 2. 화면 표시만 확인하지 말고, rethink 로그에서 해당 기기의 LG 클라우드 bridge 연결이 실제로 종료되었는지 확인합니다.
-3. 공유기에서 정확히 일치하는 DNAT 규칙만 제거합니다.
-4. 해당 기기의 443/8883 conntrack만 삭제하거나 자연스러운 재접속을 기다립니다.
+3. DNAT 관리 화면에서 해당 기기의 DNAT를 비활성화합니다.
+4. 관리 화면이 해당 기기의 443/8883 conntrack을 정리하고 `Off`로 바뀌는지 확인합니다.
 5. 기기를 Wi-Fi 설정 모드로 전환하여 LG ThinQ 앱에서 다시 등록합니다. 기존 오프라인 항목을 먼저 삭제할지는 앱의 안내에 따릅니다.
 
 기존 오프라인 기기를 LG ThinQ 앱에서 삭제하면 방 배치, 별칭, Home Assistant 또는 Google Home 연동이 변경될 수 있으므로 재등록 전에 현재 설정을 확인하세요.
 
-공유기에서 기기 한 대의 규칙만 제거하는 예:
+웹 관리 화면을 사용할 수 없으면 규칙이 있는 체인을 먼저 확인한 뒤 기기 한 대의 정확히 일치하는 규칙만 제거합니다. 아래는 전용 체인에 있는 에어컨 규칙을 제거하는 예입니다.
 
 ```sh
-/usr/sbin/iptables -t nat -D PREROUTING -s 192.168.0.45 -p tcp --dport 443 -j DNAT --to-destination 192.168.0.4:4433
-/usr/sbin/iptables -t nat -D PREROUTING -s 192.168.0.45 -p tcp --dport 8883 -j DNAT --to-destination 192.168.0.4:8883
+/usr/sbin/iptables -t nat -D RETHINK_DNAT -s 192.168.0.45/32 -p tcp -m tcp --dport 443 -j DNAT --to-destination 192.168.0.4:4433
+/usr/sbin/iptables -t nat -D RETHINK_DNAT -s 192.168.0.45/32 -p tcp -m tcp --dport 8883 -j DNAT --to-destination 192.168.0.4:8883
 /usr/sbin/conntrack -D -s 192.168.0.45 -p tcp --dport 443
 /usr/sbin/conntrack -D -s 192.168.0.45 -p tcp --dport 8883
 ```
+
+이전 방식으로 규칙이 `PREROUTING`에 직접 들어가 있다면 위 두 삭제 명령의 체인 이름만 `PREROUTING`으로 바꿉니다. 규칙이 존재하는지 확인하지 않고 `-D`를 반복 실행하지 마세요.
 
 bridge를 켜 둔 채 DNAT만 제거하면 rethink와 실제 가전이 같은 MQTT client ID로 LG 클라우드에 접속하면서 서로 연결을 끊을 수 있습니다.
 
@@ -533,6 +586,7 @@ bridge를 켜 둔 채 DNAT만 제거하면 rethink와 실제 가전이 같은 MQ
 
 ```text
 config.json
+router-dnat.json
 .env
 ca.key
 ca.cert
@@ -558,6 +612,9 @@ Rethink를 계속 사용할 계획이라면 공유기 재부팅이나 일시적�
 - rethink에 연결된 기기 목록 확인
 - 통신 모니터링 및 패킷 주입
 - bridge 설정
+- ASUS 공유기 SSH 연결 설정과 상태 확인
+- 기기 IP별 DNAT 적용·해제 및 conntrack 정리
+- 감지된 ThinQ 기기와 수동 등록 IP 연결
 
 주요 도구:
 
