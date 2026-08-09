@@ -44,6 +44,20 @@ export class Device extends TypedEmitter<DeviceEvents> {
         super()
     }
 
+    private bridgeMessageListeners = new Set<(payload: ClipMessage) => void>()
+
+    onBridgeMessage(listener: (payload: ClipMessage) => void) {
+        this.bridgeMessageListeners.add(listener)
+    }
+
+    removeBridgeMessageListener(listener: (payload: ClipMessage) => void) {
+        this.bridgeMessageListeners.delete(listener)
+    }
+
+    emitBridgeMessage(payload: ClipMessage) {
+        for (const listener of this.bridgeMessageListeners) listener(payload)
+    }
+
     send(cmd: string, type: number, data: string | object) {
         const messagestr = JSON.stringify({ did: this.id, mid: Date.now(), cmd: cmd, type: type, data: data })
         const packet = { topic: this.topic, retain: false, qos: 0 as const, dup: false, payload: messagestr }
@@ -119,15 +133,23 @@ export class DeviceAcceptor extends TypedEmitter<DeviceAcceptorEvents> {
         if (topic === 'clip/message/devices/' + payload.did) {
             if (payload.cmd === 'completeProvisioning_ack') {
                 this.completeProvisioning(payload.did, payload, client)
-            }
-
-            if (payload.cmd === 'device_packet' && client.deviceObj && payload.did === client.deviceObj.id) {
-                const buf = Buffer.from(payload.data as string, 'hex')
-                client.deviceObj.emit('data', buf)
+                return
             }
 
             if (payload.cmd === 'req_timesync' && client.deviceObj && payload.did === client.deviceObj.id) {
                 this.timeSyncRequest(client)
+                return
+            }
+
+            if (client.deviceObj && payload.did === client.deviceObj.id) {
+                if (payload.cmd === 'device_packet' && typeof payload.data === 'string') {
+                    const buf = Buffer.from(payload.data, 'hex')
+                    client.deviceObj.emit('data', buf)
+                }
+
+                // Preserve the complete device JSON for the cloud bridge. Commands such as
+                // modem_cmd cannot be represented by the legacy raw-buffer data event.
+                client.deviceObj.emitBridgeMessage(payload)
             }
         }
 

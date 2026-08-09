@@ -47,10 +47,15 @@ export class Connection extends TypedEmitter<ConnectionEvents> {
                         this.publishToCloud(this.device.state!.pubTopic, message)
                     }
 
-                    if (payload.cmd === 'packet' || payload.cmd === 'ack') {
+                    // completeProvisioning terminates at the bridge. Every other command belongs to
+                    // the physical device and must keep its original JSON envelope. Some ThinQ2
+                    // features (for example repeating reservations) use modem_cmd rather than packet.
+                    if (payload.cmd !== 'completeProvisioning') {
                         log('bridge', `${this.device.deviceId} <- ${payload.data}`)
                         this.emit('message', payload)
-                        if (payload.cmd === 'packet') this.emit('data', Buffer.from(payload.data, 'hex'))
+                        if (payload.cmd === 'packet' && typeof payload.data === 'string') {
+                            this.emit('data', Buffer.from(payload.data, 'hex'))
+                        }
                     }
                 }
             } catch (err) {
@@ -123,6 +128,11 @@ export class Connection extends TypedEmitter<ConnectionEvents> {
             type: 1,
         })
         this.publishToCloud(this.device.state!.pubTopic, message)
+    }
+
+    sendMessage(payload: ClipMessage) {
+        log('bridge', `${this.device.deviceId} -> ${payload.cmd}`)
+        this.publishToCloud(this.device.state!.pubTopic, JSON.stringify(payload))
     }
 
     private publishToCloud(topic: string, message: string, qos: 0 | 1 | 2 = 0) {

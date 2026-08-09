@@ -13,6 +13,7 @@ import { Connection as Thinq1Connection } from './thinq1connection'
 import { Connection as Thinq2Connection } from './thinq2connection'
 import { Device as T1Downstream } from '@/cloud/thinq1/device'
 import { Device as T2Downstream } from '@/cloud/thinq2/device'
+import type { ClipMessage } from '@/cloud/thinq2/clip'
 import { TypedEmitter } from 'tiny-typed-emitter'
 
 type StatusCallback = (status: string) => void
@@ -31,6 +32,9 @@ class BridgedDevice {
     ) {
         // we create the functions at runtime so that they have unique identities that can be removed with removeListener
         this.onDownstreamData = (packet: Buffer) => this.connection?.send(packet)
+        this.onDownstreamMessage = (payload: ClipMessage) => {
+            if (this.connection instanceof Thinq2Connection) this.connection.sendMessage(payload)
+        }
         this.onDownstreamClose = () => this.destroy()
 
         if (this.upstream.platformType !== this.downstream.platform) {
@@ -38,13 +42,15 @@ class BridgedDevice {
             return
         }
 
-        downstream.on('data', this.onDownstreamData)
+        if (downstream instanceof T1Downstream) downstream.on('data', this.onDownstreamData)
+        if (downstream instanceof T2Downstream) downstream.onBridgeMessage(this.onDownstreamMessage)
         downstream.on('close', this.onDownstreamClose)
 
         this.reconnectNow()
     }
 
     onDownstreamData: (packet: Buffer) => void
+    onDownstreamMessage: (payload: ClipMessage) => void
     onDownstreamClose: () => void
 
     connection: Thinq1Connection | Thinq2Connection | undefined
@@ -89,7 +95,12 @@ class BridgedDevice {
             this.connection.destroy()
             this.connection = undefined
         }
-        this.downstream.removeListener('data', this.onDownstreamData)
+        if (this.downstream instanceof T1Downstream) {
+            this.downstream.removeListener('data', this.onDownstreamData)
+        }
+        if (this.downstream instanceof T2Downstream) {
+            this.downstream.removeBridgeMessageListener(this.onDownstreamMessage)
+        }
         this.downstream.removeListener('close', this.onDownstreamClose)
         clearTimeout(this.reconnectTimeout)
         this.reconnectTimeout = undefined
