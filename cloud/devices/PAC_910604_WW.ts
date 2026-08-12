@@ -986,7 +986,7 @@ export default class Device extends TLVDevice {
                 name: '',
                 comp: 'energy_current',
                 writable: false,
-                read_xform: (raw) => (isPac910604 ? raw : Math.max(5, raw - 60)),
+                read_xform: (raw) => (isPac910604 ? (this.getPowerTLV() === 0 ? 3 : raw) : Math.max(5, raw - 60)),
             })
         }
 
