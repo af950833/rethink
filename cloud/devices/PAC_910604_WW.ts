@@ -444,6 +444,9 @@ export default class Device extends TLVDevice {
                 this.processKeyValue(0x1f9, this.raw_clip_state[0x1f9])
 
                 const powerState = val === 'ON'
+                // PAC_910604_WW does not report 0x2B3 when it turns off, so
+                // replace the retained last-running value with measured standby power.
+                if (isPac910604 && !powerState) this.HA.publishProperty(this.id, 'energy_current-', 3)
                 if (this.powerStatePrev !== powerState) for (const hook of this.powerChangeHooks) hook()
                 this.powerStatePrev = powerState
 

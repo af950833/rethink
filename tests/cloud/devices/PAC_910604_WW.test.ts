@@ -103,6 +103,17 @@ describe('PAC_910604_WW', () => {
         dev.drop()
     })
 
+    test('publishes standby power immediately when the appliance turns off', () => {
+        const { ha, dev } = configureDevice()
+
+        dev.processKeyValue(0x2b3, 38)
+        assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 38)
+
+        dev.processKeyValue(0x1f7, 0)
+        assert.equal(ha.devices[DEVICE_ID].properties['energy_current-'], 3)
+        dev.drop()
+    })
+
     test('leaves fan-only correctly when Cool Power or Long Power is selected', async () => {
         const coolPower = configureDevice()
         coolPower.dev.raw_clip_state[0x1f9] = 5
@@ -131,10 +142,7 @@ describe('PAC_910604_WW', () => {
             longPower.dev.drop()
         }
 
-        assert.deepEqual(coolPackets, [
-            [{ t: 0x236, l: 0, v: 1 }],
-            [{ t: 0x20f, l: 0, v: 0 }],
-        ])
+        assert.deepEqual(coolPackets, [[{ t: 0x236, l: 0, v: 1 }], [{ t: 0x20f, l: 0, v: 0 }]])
         assert.deepEqual(longPackets, [
             [
                 { t: 0x1f9, l: 0, v: 0 },
