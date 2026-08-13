@@ -16,10 +16,14 @@
                 height: 24px;
             }
 
-            .nav-meta {
-                display: block;
-                padding: 0 12px;
+            .dashboard-meta {
+                color: #616161;
+                padding-top: 8px;
                 white-space: nowrap;
+            }
+
+            .dashboard-meta span + span {
+                margin-left: 24px;
             }
         </style>
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
@@ -38,16 +42,14 @@
                     Rethink management panel
                 </a>
                 <ul class="right hide-on-med-and-down">
-                    <li>
-                        <span class="nav-meta">Version : <span id="management_version">-</span></span>
-                    </li>
-                    <li>
-                        <span class="nav-meta">Started : <span id="management_started">-</span></span>
-                    </li>
                     <li><a href="router.html">Asus Router DNAT Management</a></li>
                 </ul>
             </div>
         </nav>
+        <div class="container dashboard-meta right-align">
+            <span>Version : <span id="management_version">-</span></span>
+            <span>Started : <span id="management_started">-</span></span>
+        </div>
         <div class="container">
             <h4 class="header orange-text">Connectivity</h4>
             <span id="status_rethink" class="status_field"></span>Browser 🡘 Rethink<br />
