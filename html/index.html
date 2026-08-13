@@ -15,6 +15,12 @@
                 width: 24px;
                 height: 24px;
             }
+
+            .nav-meta {
+                display: block;
+                padding: 0 12px;
+                white-space: nowrap;
+            }
         </style>
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
         <link
@@ -29,9 +35,15 @@
             <div class="nav-wrapper container">
                 <a id="logo-container" href="#" class="brand-logo">
                     <span class="material-icons">psychology_alt</span>
-                    Rethink management panel (af950833)
+                    Rethink management panel
                 </a>
                 <ul class="right hide-on-med-and-down">
+                    <li>
+                        <span class="nav-meta">Version : <span id="management_version">-</span></span>
+                    </li>
+                    <li>
+                        <span class="nav-meta">Started : <span id="management_started">-</span></span>
+                    </li>
                     <li><a href="router.html">Asus Router DNAT Management</a></li>
                 </ul>
             </div>

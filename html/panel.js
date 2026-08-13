@@ -29,6 +29,14 @@ get('status_bridge_text').innerText = 'Unknown'
 
 const devices = {}
 
+function formatStartedAt(value) {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '-'
+
+    const pad = (part) => String(part).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 const baseUrl = new URL(window.location)
 baseUrl.search = ''
 baseUrl.hash = ''
@@ -190,6 +198,11 @@ function connect() {
             const json = JSON.parse(ev.data)
             if (typeof json.ha === 'boolean') {
                 get('status_mqtt').innerHTML = json.ha ? STATUS_OK : STATUS_ERROR
+            }
+
+            if (typeof json.system === 'object') {
+                get('management_version').innerText = json.system.version || '-'
+                get('management_started').innerText = formatStartedAt(json.system.startedAt)
             }
 
             if (typeof json.devices === 'object') {
