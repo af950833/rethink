@@ -12,7 +12,7 @@ import { Device as T1Device } from '@/cloud/thinq1/device'
 import { Device as T2Device } from '@/cloud/thinq2/device'
 import { RouterAPI } from './router-api'
 
-const MANAGEMENT_VERSION = '20260813'
+const MANAGEMENT_VERSION = '20260814'
 
 export function app(ha: HA_bridge, manager: DeviceManager, bridge: Bridge | undefined, routerConfigPath: string) {
     const app = new WebSocketExpress()
