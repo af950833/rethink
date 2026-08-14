@@ -306,7 +306,12 @@ export default class Device extends TLVDevice {
             increaseQueryInterval = true // assume it is running
         } else {
             action = modes2ha[modeTLV]
-            increaseQueryInterval = action != null && action !== 'fan'
+            // PAC_910604_WW reports its live power in periodic state responses,
+            // but fan-speed notifications do not consistently include 0x2B3.
+            // Poll fan-only at the same 28-second interval as cooling/drying so
+            // HA does not retain the 3 W standby value for up to 15 minutes.
+            increaseQueryInterval =
+                action != null && (action !== 'fan' || this.meta.modelId === 'PAC_910604_WW')
         }
 
         if (action != null) this.HA.publishProperty(this.id, 'climate-action', action)

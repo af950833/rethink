@@ -128,6 +128,16 @@ describe('PAC_910604_WW', () => {
         dev.drop()
     })
 
+    test('polls fan-only at the active 28-second interval', () => {
+        const { dev } = configureDevice()
+        dev.raw_clip_state[0x1f9] = 5
+
+        dev.updateClimateAction()
+
+        assert.equal(dev.query_last_interval, 28_000)
+        dev.drop()
+    })
+
     test('leaves fan-only correctly when Cool Power or Long Power is selected', async () => {
         const coolPower = configureDevice()
         coolPower.dev.raw_clip_state[0x1f9] = 5
