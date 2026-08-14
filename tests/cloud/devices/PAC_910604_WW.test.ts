@@ -34,6 +34,7 @@ describe('PAC_910604_WW', () => {
         for (const component of [
             'energysave',
             'autodry',
+            'autodryprogress',
             'displaylight',
             'smartcare',
             'humidity_sensor_mode',
@@ -43,9 +44,18 @@ describe('PAC_910604_WW', () => {
         ]) {
             assert.equal(
                 components[component].platform,
-                component.startsWith('energy_') ? 'sensor' : component === 'humidity_sensor_mode' ? 'select' : 'switch',
+                component.startsWith('energy_') || component === 'autodryprogress'
+                    ? 'sensor'
+                    : component === 'humidity_sensor_mode'
+                      ? 'select'
+                      : 'switch',
             )
         }
+
+        assert.equal(components.autodryprogress.unit_of_measurement, '%')
+        assert.equal(components.autodryprogress.suggested_display_precision, 0)
+        dev.processKeyValue(0x225, 37)
+        assert.equal(ha.devices[DEVICE_ID].properties['autodryprogress-'], 37)
 
         for (const [component, expectedTag] of [
             ['energysave', 0x20d],

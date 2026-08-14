@@ -831,6 +831,26 @@ export default class Device extends TLVDevice {
             // PAC_910604_WW reports these live values even though its legacy
             // 0x2CC capability bits do not advertise them.
             this.addConfigSwitchField(config, 0x20e, 'autodry', 'Auto dry', 'mdi:hair-dryer')
+
+            // Live captures confirm that 0x225 rises from 0 to 100 while the
+            // automatic-dry cycle runs, at roughly one percentage point every
+            // six seconds.
+            const compADryProgress = {
+                platform: 'sensor',
+                unique_id: '$deviceid-autodryprogress',
+                name: 'Auto dry progress',
+                icon: 'mdi:progress-clock',
+                unit_of_measurement: '%',
+                suggested_display_precision: 0,
+                entity_category: 'diagnostic',
+            }
+            config['components']['autodryprogress'] = compADryProgress
+            this.addField(config, {
+                id: 0x225,
+                name: '',
+                comp: 'autodryprogress',
+                writable: false,
+            })
         } else if (this.raw_clip_state[0x2cc] & 4) {
             const compADry = {
                 platform: 'binary_sensor',
